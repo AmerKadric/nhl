@@ -48,6 +48,22 @@ def test_features_do_not_depend_on_the_future(frames, full, q):
                                atol=1e-12, equal_nan=True)
 
 
+def test_features_do_not_depend_on_same_day_games(frames, full):
+    """A game's features must not change when OTHER games on the same date
+    have or have not been played (no intra-day look-ahead)."""
+    g = frames.games
+    counts = g.groupby("game_date")["id"].count()
+    busy = [d for d in counts[counts >= 2].index][len(counts[counts >= 2]) // 2:][:5]
+    cols = _feature_cols(full)
+    for date in busy:
+        cut = int(g.loc[g["game_date"] == date, "id"].min())
+        assert (g.loc[g["id"] >= cut, "game_date"] >= date).all()
+        part = FeatureBuilder(_truncate(frames, cut), FeatureParams()).run().set_index("game_id")
+        day = list(g.loc[g["game_date"] == date, "id"])
+        np.testing.assert_allclose(full.loc[day, cols].astype(float).values, part.loc[day, cols].astype(float).values,
+                                   rtol=0, atol=1e-12, equal_nan=True)
+
+
 def test_features_ignore_the_games_own_result(frames, full):
     """Changing a game's score must not change that game's features."""
     ids = sorted(frames.games["id"])

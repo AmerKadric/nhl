@@ -1,0 +1,126 @@
+@import "tailwindcss";
+
+/* PUCKIQ design tokens. Dark only: the product is a terminal-style reading
+   surface, so there is no light theme to keep in sync. */
+@theme {
+  --color-bg: #090b0f;
+  --color-surface: #10131a;
+  --color-raised: #161a23;
+  --color-line: #222835;
+  --color-line-soft: #1a1f2a;
+  --color-ink: #e9eef4;
+  --color-ink-2: #aab4c4;
+  --color-mute: #7f8a9c;
+  --color-ice: #5cd0ff;        /* brand accent: UI, links, focus */
+  --color-home: #2a9fd8;       /* chart mark: home team (validated pair) */
+  --color-away: #c97f2e;       /* chart mark: away team */
+  --color-good: #3fbf7f;       /* status only */
+  --color-bad: #e5606b;        /* status only */
+  --color-warn: #e0b341;       /* status only */
+
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-barlow), "Arial Narrow", sans-serif;
+  --font-mono: var(--font-plex-mono), ui-monospace, "SF Mono", Menlo, monospace;
+}
+
+html {
+  background: var(--color-bg);
+  color-scheme: dark;
+}
+
+body {
+  background:
+    radial-gradient(1200px 500px at 50% -260px, rgba(92, 208, 255, 0.07), transparent 70%),
+    var(--color-bg);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  font-feature-settings: "cv11", "ss01";
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: rgba(92, 208, 255, 0.28);
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-ice);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+.display {
+  font-family: var(--font-display);
+  font-variant-numeric: tabular-nums;
+}
+
+.eyebrow {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 0.72rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--color-mute);
+}
+
+.panel {
+  background: var(--color-surface);
+  border: 1px solid var(--color-line);
+  border-radius: 14px;
+}
+
+/* faint rink-line texture used on hero surfaces */
+.rink {
+  background-image:
+    linear-gradient(90deg, transparent calc(50% - 0.5px), rgba(229, 96, 107, 0.16) calc(50% - 0.5px), rgba(229, 96, 107, 0.16) calc(50% + 0.5px), transparent calc(50% + 0.5px)),
+    linear-gradient(90deg, transparent calc(33% - 0.5px), rgba(92, 208, 255, 0.1) calc(33% - 0.5px), rgba(92, 208, 255, 0.1) calc(33% + 0.5px), transparent calc(33% + 0.5px)),
+    linear-gradient(90deg, transparent calc(67% - 0.5px), rgba(92, 208, 255, 0.1) calc(67% - 0.5px), rgba(92, 208, 255, 0.1) calc(67% + 0.5px), transparent calc(67% + 0.5px));
+}
+
+.skeleton {
+  background: linear-gradient(100deg, var(--color-surface) 30%, var(--color-raised) 50%, var(--color-surface) 70%);
+  background-size: 200% 100%;
+  animation: shimmer 1.6s linear infinite;
+  border-radius: 10px;
+}
+
+@keyframes shimmer {
+  to {
+    background-position: -200% 0;
+  }
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+.live-dot {
+  animation: pulse-dot 1.4s ease-in-out infinite;
+}
+
+.grow-x {
+  transform-origin: left center;
+  animation: grow-x 0.6s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+@keyframes grow-x {
+  from { transform: scaleX(0); }
+}
+
+.hatch {
+  background-image: repeating-linear-gradient(135deg, transparent 0 4px, rgba(255, 255, 255, 0.05) 4px 5px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}

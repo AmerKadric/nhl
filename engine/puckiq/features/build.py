@@ -1,13 +1,16 @@
 """Pre-game feature construction.
 
-A single chronological pass over every game. For each game the features are
-read from the running state BEFORE that game's result is applied, so a
-feature can only ever depend on games that finished earlier. Schedule-derived
+A single chronological pass, one calendar day at a time. Features for ALL of
+a day's games are read from the running state first; only then are that
+day's results applied. A feature can therefore only depend on games played
+on earlier days, never on the game itself or on another game the same
+night, which is also how production forecasts are made (before the slate). Schedule-derived
 state (rest, travel) is advanced for unplayed games too, because the schedule
 is public in advance; performance state is advanced only by final results."""
 from __future__ import annotations
 
 import datetime as dt
+import itertools
 import math
 from collections import deque
 from dataclasses import dataclass
@@ -283,13 +286,16 @@ class FeatureBuilder:
         rows: list[dict] = []
         cand_rows: list[dict] = []
 
-        for g in games.itertuples():
+        def is_final(g) -> bool:
+            return g.home_score is not None and not (isinstance(g.home_score, float) and math.isnan(g.home_score))
+
+        def pre(g) -> None:
             h, a = self.team(g.home_team_id), self.team(g.away_team_id)
             hk, ak = self.fr[g.home_team_id], self.fr[g.away_team_id]
             self._rollover(h, g.season)
             self._rollover(a, g.season)
             host = self.loc[g.home_team_id]
-            final = g.home_score is not None and not (isinstance(g.home_score, float) and math.isnan(g.home_score))
+            final = is_final(g)
             row = {"game_id": g.id, "season": g.season, "game_type": g.game_type, "game_date": g.game_date,
                    "home_team_id": g.home_team_id, "away_team_id": g.away_team_id, "final": final,
                    "playoff": 1.0 if g.game_type == config.PLAYOFF else 0.0,
@@ -320,13 +326,18 @@ class FeatureBuilder:
                 row[f"{side}_gk_ncand"] = len(cands)
             rows.append(row)
 
+        def post(g) -> None:
+            h, a = self.team(g.home_team_id), self.team(g.away_team_id)
+            hk, ak = self.fr[g.home_team_id], self.fr[g.away_team_id]
+            host = self.loc[g.home_team_id]
+            gl = ggs_by_game.get(g.id, [])
             # --- schedule state (known in advance) ---
             for ts, is_home in ((h, True), (a, False)):
                 ts.dates.append(g.game_date)
                 ts.loc = host
                 ts.road_streak = 0 if is_home else ts.road_streak + 1
-            if not final:
-                continue
+            if not is_final(g):
+                return
 
             # --- results ---
             hs, as_ = int(g.home_score), int(g.away_score)
@@ -377,6 +388,13 @@ class FeatureBuilder:
                                         elo=h.elo, off_g=h.off["g"], def_g=h.deff["g"], off_xg=h.off["xg5"], def_xg=h.deff["xg5"]))
             self.rating_log.append(dict(team_id=g.away_team_id, as_of_game_id=g.id, season=g.season, game_date=g.game_date,
                                         elo=a.elo, off_g=a.off["g"], def_g=a.deff["g"], off_xg=a.off["xg5"], def_xg=a.deff["xg5"]))
+
+        for _, day in itertools.groupby(games.itertuples(), key=lambda g: g.game_date):
+            day = list(day)
+            for g in day:
+                pre(g)
+            for g in day:
+                post(g)
 
         feat = pd.DataFrame(rows)
         self.cands = pd.DataFrame(cand_rows)
