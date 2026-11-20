@@ -1,0 +1,88 @@
+{
+  "created_at": "2026-11-20T22:24:12+00:00",
+  "params": {
+    "kf": {
+      "xg5": {
+        "r": 0.523471105184223,
+        "q": 0.00020945738985321083,
+        "q_season": 0.01022785877966254,
+        "carry": 0.6736355167205276,
+        "p0": 0.15
+      },
+      "xga": {
+        "r": 0.6187183274406791,
+        "q": 0.00020065766995428503,
+        "q_season": 0.015254975651730762,
+        "carry": 0.6465181336439383,
+        "p0": 0.15
+      },
+      "g": {
+        "r": 2.4156564821940902,
+        "q": 8.918980329299987e-05,
+        "q_season": 0.019419388914105645,
+        "carry": 0.7093500290017498,
+        "p0": 0.04663937128201451
+      }
+    },
+    "elo_k": 6.0,
+    "elo_hfa": 30.0,
+    "elo_carry": 0.8,
+    "st_hl_games": 40.0,
+    "st_prior_sec": 6000.0,
+    "fin_hl_games": 82.0,
+    "fin_prior_xg": 150.0,
+    "gk_hl_xg": 250.0,
+    "gk_prior_xg": 300.0,
+    "gk_prior_mean": 0.01,
+    "league_hl_games": 600.0,
+    "starter_w": {
+      "share10": 1.6672315429785867,
+      "prev_rested": 0.3312956412787239,
+      "prev_b2b": -1.2988541995705911,
+      "share30": 0.5178760567478682
+    }
+  },
+  "report": {
+    "tuned_on_seasons": [
+      2012,
+      2016
+    ],
+    "burn_in_season": 2011,
+    "objectives": {
+      "kf_xg5": {
+        "mean_loglik_default": -1.1575996246829836,
+        "mean_loglik_tuned": -1.11515827727342,
+        "n": 12034
+      },
+      "kf_xga": {
+        "mean_loglik_default": -1.2273476712253968,
+        "mean_loglik_tuned": -1.2008522110631805,
+        "n": 12034
+      },
+      "kf_g": {
+        "mean_loglik_default": -1.8721433181220362,
+        "mean_loglik_tuned": -1.8692749609284112,
+        "n": 12172
+      },
+      "elo": {
+        "mean_loglik_tuned": -0.6756446868926294
+      },
+      "goalie": {
+        "mean_loglik_tuned": -1.7676606337395033,
+        "mean_loglik_no_goalie_effect": -1.7689473345482485
+      },
+      "starter": {
+        "mean_log_prob_of_starter": -0.5882851630716052,
+        "top_pick_accuracy": 0.7291007101908104,
+        "n_team_games": 11687
+      }
+    }
+  },
+  "not_tuned": [
+    "st_hl_games",
+    "st_prior_sec",
+    "fin_hl_games",
+    "fin_prior_xg",
+    "league_hl_games"
+  ]
+}
