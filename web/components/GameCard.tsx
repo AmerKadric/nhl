@@ -41,11 +41,12 @@ export function GameCard({ g }: { g: Game }) {
   const observed = live ? { h: g.live!.home_score, a: g.live!.away_score } : g.result ? { h: g.result.home_score, a: g.result.away_score } : null;
   const off = g.schedule_state !== "OK";
   const big = observed ?? (f && !off ? { h: f.ml_home_goals, a: f.ml_away_goals } : null);
-  const homeFav = f ? f.p_home_win >= 0.5 : null;
+  // emphasise whichever team is ahead in the numerals actually shown
+  const homeLead = big && big.h != null && big.a != null ? big.h > big.a : null;
   const bigLabel = live ? "Live score" : g.result ? "Final score" : f && !off ? "Projected final" : null;
   const rows = [
-    { t: g.away, score: big?.a, p: f?.p_away_win, lead: observed ? observed.a! > observed.h! : homeFav === false, side: "away" as const },
-    { t: g.home, score: big?.h, p: f?.p_home_win, lead: observed ? observed.h! > observed.a! : homeFav === true, side: "home" as const },
+    { t: g.away, score: big?.a, p: f?.p_away_win, lead: homeLead === false, side: "away" as const },
+    { t: g.home, score: big?.h, p: f?.p_home_win, lead: homeLead === true, side: "home" as const },
   ];
 
   return (

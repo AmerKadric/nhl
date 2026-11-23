@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { connection } from "next/server";
 import { Suspense } from "react";
 
 import { StaleBanner } from "@/components/Chrome";
@@ -67,6 +68,7 @@ async function ModelLine() {
 
 async function Slate({ searchParams }: { searchParams: PageProps<"/">["searchParams"] }) {
   const sp = await searchParams;
+  await connection(); // the slate depends on the current date, so render at request time
   const today = todayET();
   const d = typeof sp.d === "string" && isDate(sp.d) ? sp.d : null;
   const raw = typeof sp.view === "string" ? sp.view : "today";

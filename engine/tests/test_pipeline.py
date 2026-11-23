@@ -291,6 +291,17 @@ def test_moneypuck_shot_parsing(tmp_path):
     assert agg.loc[22, "attempts"] == 1   # empty-net and shootout attempts excluded
 
 
+def test_model_loads_from_database_when_artifact_file_is_missing(published, tmp_path, monkeypatch):
+    mid, fc = pub.active_model()
+    with db.begin() as c:
+        c.execute(db.model_versions.update().where(db.model_versions.c.id == mid).values(artifact_path=str(tmp_path / "gone.json")))
+    monkeypatch.setattr(config, "ARTIFACT_DIR", tmp_path)
+    mid2, fc2 = pub.active_model()
+    assert mid2 == mid and fc2.version == fc.version
+    np.testing.assert_allclose(fc2.glm.beta, fc.glm.beta)
+    assert fc2.sp.theta == fc.sp.theta
+
+
 def test_missing_values_do_not_break_prediction(published):
     """A feature row with gaps falls back to training means, never NaN."""
     am = pub.active_model()

@@ -28,7 +28,9 @@ def register_model(fc: Forecaster, path, backtest_summary: dict | None = None, a
             mid = c.execute(db.model_versions.insert().values(
                 version=fc.version, created_at=db.utcnow(), trained_through=fc.trained_through, architecture=ARCHITECTURE,
                 config={"groups": fc.glm.groups, "columns": fc.glm.cols, "coefficients": dict(zip(["const"] + fc.glm.cols, fc.glm.beta.tolist())),
-                        "simulator": fc.sp.to_json(), "n_sims": config.N_SIMS},
+                        "simulator": fc.sp.to_json(), "n_sims": config.N_SIMS,
+                        # full model, so any runner can load it without the local artifact file
+                        "artifact": fc.to_json()},
                 backtest_summary=backtest_summary, artifact_path=str(path), is_active=False,
             )).inserted_primary_key[0]
             c.execute(db.training_runs.insert().values(
@@ -41,16 +43,23 @@ def register_model(fc: Forecaster, path, backtest_summary: dict | None = None, a
 
 
 def active_model() -> tuple[int, Forecaster] | None:
+    """The active production model: from its artifact file when present,
+    otherwise from the copy stored with the model version in the database."""
+    import json
+    from pathlib import Path
     with db.begin() as c:
-        row = c.execute(sa.select(db.model_versions.c.id, db.model_versions.c.artifact_path, db.model_versions.c.version)
+        row = c.execute(sa.select(db.model_versions.c.id, db.model_versions.c.artifact_path, db.model_versions.c.version,
+                                  db.model_versions.c.config)
                         .where(db.model_versions.c.is_active == sa.true())).first()
     if not row:
         return None
-    from pathlib import Path
-    path = Path(row.artifact_path)
-    if not path.exists():
-        path = config.ARTIFACT_DIR / "models" / f"{row.version}.json"
-    return row.id, Forecaster.load(path)
+    for path in (Path(row.artifact_path or ""), config.ARTIFACT_DIR / "models" / f"{row.version}.json"):
+        if path.is_file():
+            return row.id, Forecaster.load(path)
+    cfg = json.loads(row.config) if isinstance(row.config, str) else row.config
+    if cfg and cfg.get("artifact"):
+        return row.id, Forecaster.from_json(cfg["artifact"])
+    raise RuntimeError(f"model {row.version} is active but its artifact is missing; run `puckiq train`")
 
 
 def goalie_options(fb: FeatureBuilder, game_id: int, names: dict[int, str], rosters: dict[str, set[int]] | None,
