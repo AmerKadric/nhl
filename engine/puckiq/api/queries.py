@@ -461,8 +461,11 @@ def season_outlook(season: int) -> dict:
             tm = teams_map()
             for t in sim["teams"]:
                 t["team"] = _team_brief(t["team_id"]) if t["team_id"] in tm else None
+            for sr in sim.get("series") or []:
+                sr["top_team"] = _team_brief(sr["top"]) if sr["top"] in tm else None
+                sr["bottom_team"] = _team_brief(sr["bottom"]) if sr["bottom"] in tm else None
         return {"season": season, "simulation": sim, "history": db.get_document(f"season_sim_history:{season}"),
-                "validation": db.get_document("season_sim_validation")}
+                "validation": db.get_document("season_sim_validation"), "playoff_validation": db.get_document("playoff_validation")}
     return cached(f"season_outlook:{season}", 600, load)
 
 

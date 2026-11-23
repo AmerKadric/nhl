@@ -357,7 +357,7 @@ export type TeamPage = {
   games_remaining: number;
   forward_history: HistoryRow[];
   backtest_history: HistoryRow[];
-  outlook?: SeasonTeam | null;
+  outlook?: (SeasonTeam & Partial<PlayoffTeam>) | null;
 };
 
 export type SeasonTeam = {
@@ -395,9 +395,49 @@ export type SeasonValidationBlock = {
   n_champions: number;
 };
 
+export type PlayoffSeries = {
+  round: number;
+  matchup: number;
+  top: number;
+  bottom: number;
+  top_team: TeamBrief | null;
+  bottom_team: TeamBrief | null;
+  wins_top: number;
+  wins_bottom: number;
+  done: boolean;
+  winner: number | null;
+  p_top: number | null;
+};
+
+export type PlayoffTeam = { team_id: number; team: TeamBrief | null; alive: boolean; p_round: Record<string, number>; p_cup: number };
+
+export type PlayoffSim = {
+  phase: "playoffs" | "complete";
+  season: number;
+  generated_at: string;
+  results_through: string;
+  model_version: string;
+  n_sims: number;
+  round: number;
+  round_name: string;
+  series: PlayoffSeries[];
+  teams: PlayoffTeam[];
+  champion: number | null;
+};
+
+export type PlayoffValidation = {
+  generated_at: string;
+  seasons: number[];
+  series: { n: number; brier: number; accuracy: number; home_ice_win_rate: number; brier_home_ice_always: number; brier_base_rate: number; mean_stated: number };
+  calibration: CalBin[];
+  cup: { team_seasons: number; n_champions: number; champion_mean_prob: number; champion_uniform_prob: number; brier: number; brier_uniform: number };
+};
+
 export type SeasonOutlook = {
   season: number;
+  playoff_validation?: PlayoffValidation | null;
   simulation: {
+    phase?: "regular" | "awaiting_bracket" | "playoffs" | "complete";
     season: number;
     generated_at: string;
     results_through: string;
@@ -406,7 +446,7 @@ export type SeasonOutlook = {
     games_remaining: number;
     teams: SeasonTeam[];
   } | null;
-  history: { dates: string[]; teams: Record<string, { p_playoffs: number[]; p_cup: number[]; proj_points: number[] }> } | null;
+  history: { dates: string[]; teams: Record<string, { p_playoffs: (number | null)[]; p_cup: number[]; proj_points: (number | null)[] }> } | null;
   validation: {
     generated_at: string;
     seasons: number[];

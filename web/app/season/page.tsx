@@ -3,10 +3,11 @@ import Link from "next/link";
 import { connection } from "next/server";
 import { Suspense } from "react";
 
+import { Bracket } from "@/components/Bracket";
 import { Chip, PageSkeleton, Section, Stat, TeamLogo, Unavailable } from "@/components/ui";
 import { apiCached } from "@/lib/api";
 import { odds, pct, recordStr, seasonLabel, stampET } from "@/lib/format";
-import type { SeasonOutlook, SeasonTeam } from "@/lib/types";
+import type { PlayoffSim, SeasonOutlook, SeasonTeam } from "@/lib/types";
 
 export const metadata: Metadata = { title: "Season outlook" };
 
@@ -111,6 +112,21 @@ async function Outlook() {
       </div>
     );
   }
+  if (sim.phase === "playoffs" || sim.phase === "complete") {
+    const po = sim as unknown as PlayoffSim;
+    return (
+      <>
+        <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-ink-2">
+          <Chip tone="ice">{seasonLabel(po.season)} playoffs</Chip>
+          <span className="num">{po.n_sims.toLocaleString("en-US")} simulated playoffs</span>
+          <span className="num">results through {po.results_through}</span>
+          <span className="num">run {stampET(po.generated_at + "Z")}</span>
+          <span className="num">{po.model_version}</span>
+        </div>
+        <Bracket sim={po} validation={d.playoff_validation ?? null} />
+      </>
+    );
+  }
   const teams = sim.teams;
   const confs = [...new Set(teams.map((t) => t.conference))].sort();
   const fav = [...teams].sort((a, b) => b.p_cup - a.p_cup).slice(0, 8);
@@ -133,6 +149,15 @@ async function Outlook() {
         <span className="num">run {stampET(sim.generated_at + "Z")}</span>
         <span className="num">{sim.model_version}</span>
       </div>
+
+      {sim.phase === "awaiting_bracket" && (
+        <div role="status" className="mt-5 rounded-xl border border-ice/30 bg-ice/[0.06] px-4 py-3 text-sm text-ink">
+          <strong className="font-semibold">The regular season is over.</strong>{" "}
+          <span className="text-ink-2">
+            Series odds will appear here as soon as the NHL lists the first-round games. What follows is the last outlook from before the season ended.
+          </span>
+        </div>
+      )}
 
       <Section id="cup" eyebrow="Stanley Cup" title="Most likely champions" note="Even the favourite is far more likely to lose than to win: sixteen teams play four rounds of best-of-seven.">
         <div className="panel p-5">

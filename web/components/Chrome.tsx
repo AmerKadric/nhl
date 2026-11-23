@@ -12,10 +12,12 @@ import { NavLinks } from "./NavLinks";
 export function Header() {
   return (
     <header className="sticky top-0 z-40 border-b border-line bg-bg/85 backdrop-blur-md">
-      <div className="mx-auto flex h-14 max-w-7xl items-center gap-4 px-4 sm:px-6">
-        <Link href="/" className="flex items-center gap-2.5" aria-label="PUCKIQ home">
+      <div className="mx-auto flex h-14 max-w-7xl items-center gap-2 px-4 sm:gap-4 sm:px-6">
+        <Link href="/" className="flex shrink-0 items-center gap-2.5" aria-label="PUCKIQ home">
           <Mark />
-          <Wordmark />
+          <span className="hidden sm:contents">
+            <Wordmark />
+          </span>
         </Link>
         <Suspense fallback={<span className="ml-6 h-5 w-56" />}>
           <NavLinks />

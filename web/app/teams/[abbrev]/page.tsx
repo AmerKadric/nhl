@@ -87,7 +87,7 @@ async function Team({ params }: { params: PageProps<"/teams/[abbrev]">["params"]
         </div>
       </header>
 
-      {d.outlook && (
+      {d.outlook && d.outlook.proj_points != null && (
         <Section
           id="outlook"
           eyebrow="Season outlook"
@@ -102,6 +102,26 @@ async function Team({ params }: { params: PageProps<"/teams/[abbrev]">["params"]
             <Stat label="Reach conf. final" value={odds(d.outlook.p_conf_final)} />
             <Stat label="Win Stanley Cup" value={odds(d.outlook.p_cup)} />
           </div>
+        </Section>
+      )}
+
+      {d.outlook && d.outlook.p_round && (
+        <Section
+          id="outlook"
+          eyebrow="Playoffs"
+          title={d.outlook.alive ? "Odds from here" : "Eliminated"}
+          note="From the daily playoff simulation: probabilities, not predictions."
+          aside={<Link href="/season" className="text-sm text-ice hover:underline">Full bracket</Link>}
+        >
+          {d.outlook.alive ? (
+            <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+              {Object.entries(d.outlook.p_round).map(([r, p]) => (
+                <Stat key={r} label={r === "4" ? "Win Stanley Cup" : r === "3" ? "Win conference final" : r === "2" ? "Win second round" : "Win first round"} value={odds(p)} />
+              ))}
+            </div>
+          ) : (
+            <Unavailable title="This team's playoff run is over." />
+          )}
         </Section>
       )}
 

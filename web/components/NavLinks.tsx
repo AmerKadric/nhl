@@ -14,7 +14,7 @@ const LINKS = [
 export function NavLinks() {
   const path = usePathname() ?? "/";
   return (
-    <nav aria-label="Primary" className="ml-2 flex items-center gap-0.5 sm:ml-6 sm:gap-1">
+    <nav aria-label="Primary" className="flex min-w-0 items-center gap-0.5 overflow-x-auto [scrollbar-width:none] sm:ml-6 sm:gap-1 [&::-webkit-scrollbar]:hidden">
       {LINKS.map((l) => {
         const on = l.match(path);
         return (
@@ -22,7 +22,7 @@ export function NavLinks() {
             key={l.href}
             href={l.href}
             aria-current={on ? "page" : undefined}
-            className={`rounded-md px-2.5 py-1.5 text-sm font-medium transition-colors sm:px-3 ${
+            className={`shrink-0 rounded-md px-2 py-1.5 text-[0.8125rem] font-medium transition-colors sm:px-3 sm:text-sm ${
               on ? "bg-raised text-ink" : "text-ink-2 hover:bg-surface hover:text-ink"
             }`}
           >

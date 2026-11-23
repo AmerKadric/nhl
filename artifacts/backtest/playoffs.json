@@ -1,0 +1,134 @@
+{
+ "generated_at": "2026-11-23T18:24:50+00:00",
+ "seasons": [
+  2017,
+  2018,
+  2021,
+  2022,
+  2023,
+  2024,
+  2025
+ ],
+ "n_sims": 8000,
+ "strength_sd_scale": 1.0,
+ "series": {
+  "n": 105,
+  "brier": 0.23091331152290584,
+  "accuracy": 0.6476190476190476,
+  "home_ice_win_rate": 0.6,
+  "brier_home_ice_always": 0.4,
+  "brier_coin_flip": 0.25,
+  "brier_base_rate": 0.24,
+  "mean_stated": 0.5941253134321824
+ },
+ "by_round": {
+  "1": {
+   "n": 56,
+   "brier": 0.22034252772383292,
+   "accuracy": 0.6607142857142857,
+   "home_ice_win_rate": 0.6964285714285714,
+   "brier_home_ice_always": 0.30357142857142855,
+   "brier_coin_flip": 0.25,
+   "brier_base_rate": 0.21141581632653061,
+   "mean_stated": 0.6177111343988239
+  },
+  "2": {
+   "n": 28,
+   "brier": 0.23415198639330984,
+   "accuracy": 0.6428571428571429,
+   "home_ice_win_rate": 0.5714285714285714,
+   "brier_home_ice_always": 0.42857142857142855,
+   "brier_coin_flip": 0.25,
+   "brier_base_rate": 0.24489795918367346,
+   "mean_stated": 0.5549254170770327
+  },
+  "3": {
+   "n": 14,
+   "brier": 0.2714006714444968,
+   "accuracy": 0.5714285714285714,
+   "home_ice_win_rate": 0.2857142857142857,
+   "brier_home_ice_always": 0.7142857142857143,
+   "brier_coin_flip": 0.25,
+   "brier_base_rate": 0.20408163265306123,
+   "mean_stated": 0.5817599989387671
+  },
+  "4": {
+   "n": 7,
+   "brier": 0.22155016259069113,
+   "accuracy": 0.7142857142857143,
+   "home_ice_win_rate": 0.5714285714285714,
+   "brier_home_ice_always": 0.42857142857142855,
+   "brier_coin_flip": 0.25,
+   "brier_base_rate": 0.24489795918367346,
+   "mean_stated": 0.586968960106482
+  }
+ },
+ "calibration": [
+  {
+   "lo": 0.0,
+   "hi": 0.45,
+   "n": 15,
+   "mean_pred": 0.3755541121936581,
+   "observed": 0.5333333333333333
+  },
+  {
+   "lo": 0.45,
+   "hi": 0.55,
+   "n": 22,
+   "mean_pred": 0.498127758123693,
+   "observed": 0.45454545454545453
+  },
+  {
+   "lo": 0.55,
+   "hi": 0.65,
+   "n": 29,
+   "mean_pred": 0.6003527099142217,
+   "observed": 0.5517241379310345
+  },
+  {
+   "lo": 0.65,
+   "hi": 1.0,
+   "n": 39,
+   "mean_pred": 0.7277129990061696,
+   "observed": 0.7435897435897436
+  }
+ ],
+ "cup": {
+  "team_seasons": 112,
+  "n_champions": 7,
+  "champion_mean_prob": 0.08317857142857142,
+  "champion_uniform_prob": 0.0625,
+  "brier": 0.05904545647321428,
+  "brier_uniform": 0.05859375
+ },
+ "scale_study": {
+  "fit_seasons": [
+   2017,
+   2018,
+   2021,
+   2022
+  ],
+  "grid": [
+   {
+    "scale": 0.0,
+    "fit_brier": 0.23856617919339948,
+    "later_brier": 0.22067797524207922
+   },
+   {
+    "scale": 1.0,
+    "fit_brier": 0.2384229654145243,
+    "later_brier": 0.2209004396674145
+   },
+   {
+    "scale": 2.0,
+    "fit_brier": 0.23796101714257464,
+    "later_brier": 0.22115974234322075
+   },
+   {
+    "scale": 3.0,
+    "fit_brier": 0.23739583935799094,
+    "later_brier": 0.22152830958841227
+   }
+  ]
+ }
+}

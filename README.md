@@ -13,6 +13,7 @@ PUCKIQ forecasts the final score of every NHL game with a statistical model, sho
 - Lets you re-run a matchup in the Prediction Lab with a different goalie or schedule situation.
 - Publishes forecasts as append-only versions and scores every one automatically after the game.
 - Simulates the rest of the season every day for projected standings, playoff odds and Stanley Cup odds.
+- Switches to playoff mode by itself when the regular season ends: the Season page becomes the bracket, with odds on every live series from its current score and each remaining team's odds round by round.
 - Records pre-game betting odds from the NHL feed and scores the model against the market on the same games. The model never uses them and individual prices are not displayed.
 
 ## Results
@@ -44,6 +45,19 @@ Checked by re-running the simulation as of December 1 and February 1 in 7 past s
 | Teams given 70–90% to make the playoffs | made it 82% of the time (77 cases) |
 | Final points, average miss | 6.3 points |
 | Actual points inside the 80% range | 81% of the time |
+
+### Playoff series odds
+
+Checked by pricing every series of 7 past playoffs on the first day of its round, with everything after that date hidden (105 series):
+
+| Measure | Result |
+|---|---|
+| Series odds, Brier score | 0.231 (0.240 for quoting every series at the rate home-ice teams won, 0.250 for a coin flip) |
+| Series winner picked | 64.8% (the team with home ice won 60.0%) |
+| Series given 65% or more | won 74% of the time (39 cases, 73% stated) |
+| Cup odds before round one, Brier score | 0.0590, against 0.0586 for giving all sixteen teams the same chance |
+
+The edge on single series is real but small, and 105 series is a small sample. Cup odds did **not** beat equal odds on 7 champions; the page says so next to them.
 
 - One setting is tuned on this history: the simulation's uncertainty about team strength is doubled, because the rating filter alone was too sure of itself over a full season. It was chosen on four seasons and checked on the other three.
 - Cup odds rest on 14 champion-checkpoints, too few to validate.
@@ -78,7 +92,7 @@ NHL APIs + MoneyPuck files
 | `engine/puckiq/backtest` | Walk-forward backtest and metrics |
 | `engine/puckiq/pipeline` | Daily and refresh jobs, publishing, settlement |
 | `engine/puckiq/api` | HTTP API, including the scenario lab |
-| `engine/tests` | 73 tests: simulator rules, look-ahead leakage, lineups, season simulation, summaries, market benchmark, settlement, API |
+| `engine/tests` | 79 tests: simulator rules, look-ahead leakage, lineups, season simulation, playoff bracket and series odds, summaries, market benchmark, settlement, API |
 | `web/` | Next.js 16 front end |
 | `artifacts/` | Tuned rating parameters and the backtest report |
 
@@ -110,6 +124,7 @@ npm run dev                                              # site on http://localh
 | `puckiq backtest` | Walk-forward backtest of every candidate model |
 | `puckiq season-sim` | Simulate the rest of the season and store the result (also part of `daily`) |
 | `puckiq season-backtest` | Validate the season simulation against past seasons |
+| `puckiq playoff-backtest` | Validate playoff series and Cup odds against past playoffs |
 | `puckiq tune` | Re-tune rating parameters on pre-2017 seasons only |
 | `puckiq status` | Data freshness for each feed |
 | `puckiq copy-db --from <url>` | Copy every table from another database into `DATABASE_URL` |

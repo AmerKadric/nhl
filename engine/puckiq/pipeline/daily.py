@@ -24,6 +24,7 @@ from .. import market
 from ..features.build import FeatureBuilder, build_all
 from ..ingest import moneypuck, nhl
 from ..models.forecaster import Forecaster
+from ..sim import playoffs as playoff_sim
 from ..sim import season as season_sim
 from . import publish as pub
 from .settle import settle
@@ -125,7 +126,7 @@ def run_season_sim(feat, fb: FeatureBuilder, season: int, n_sims: int = SEASON_S
     _, fc = am
     inp = season_sim.prepare(feat, fb.f.games, fc, season, season_sim.alignment_from_teams(fb.f.teams))
     if inp is None:
-        return {"status": "regular season complete"}
+        return run_playoff_sim(feat, fb, season, fc, n_sims)
     inp.sd_off, inp.sd_def = inp.sd_off * season_sim.STRENGTH_SD_SCALE, inp.sd_def * season_sim.STRENGTH_SD_SCALE
     today = dt.datetime.now(ET).date()
     seed = int(today.strftime("%Y%m%d"))
@@ -133,7 +134,7 @@ def run_season_sim(feat, fb: FeatureBuilder, season: int, n_sims: int = SEASON_S
     through = max(d for d, sc in zip(fb.f.games["game_date"], fb.f.games["home_score"]) if sc is not None and sc == sc)
     teams = [{k: (v.item() if hasattr(v, "item") else v) for k, v in r.items()} for r in out.to_dict("records")]
     db.put_document(f"season_sim:{season}", {
-        "season": season, "generated_at": db.utcnow().isoformat(timespec="seconds"), "results_through": str(through),
+        "phase": "regular", "season": season, "generated_at": db.utcnow().isoformat(timespec="seconds"), "results_through": str(through),
         "model_version": fc.version, "n_sims": n_sims, "seed": seed, "games_remaining": int(len(inp.home)),
         "strength_sd_scale": season_sim.STRENGTH_SD_SCALE, "teams": teams})
     hist = db.get_document(f"season_sim_history:{season}") or {"dates": [], "teams": {}}
@@ -151,6 +152,60 @@ def run_season_sim(feat, fb: FeatureBuilder, season: int, n_sims: int = SEASON_S
         h["proj_points"].append(round(t["proj_points"], 1))
     db.put_document(f"season_sim_history:{season}", hist)
     return {"status": "ok", "teams": len(teams), "games_remaining": int(len(inp.home))}
+
+
+def playoff_document(inp, out: dict, season: int, model_version: str, n_sims: int, seed: int, through) -> dict:
+    """The stored form of a playoff simulation: every series so far, the
+    current round's series odds and each remaining team's round-by-round odds."""
+    r0 = out["round"]
+    series = [{"round": s.round, "matchup": s.matchup, "top": s.top, "bottom": s.bottom, "wins_top": s.wins_top,
+               "wins_bottom": s.wins_bottom, "done": True, "winner": s.winner, "p_top": None} for s in inp.earlier]
+    for s, p in zip(inp.series, out["p_top"]):
+        series.append({"round": s.round, "matchup": s.matchup, "top": s.top, "bottom": s.bottom, "wins_top": s.wins_top,
+                       "wins_bottom": s.wins_bottom, "done": s.done, "winner": s.winner, "p_top": None if s.done else p})
+    out_ids = {t for s in inp.series if s.done for t in (s.top, s.bottom) if t != s.winner}
+    teams = [{"team_id": t, "alive": t not in out_ids, "p_round": {str(r): p for r, p in v.items()}, "p_cup": v[4]}
+             for t, v in out["teams"].items()]
+    final = inp.series[0]
+    champion = final.winner if r0 == 4 and final.done else None
+    return {"phase": "complete" if champion else "playoffs", "season": season, "generated_at": db.utcnow().isoformat(timespec="seconds"),
+            "results_through": str(through), "model_version": model_version, "n_sims": n_sims, "seed": seed, "round": r0,
+            "round_name": playoff_sim.ROUND_NAMES[r0], "strength_sd_scale": playoff_sim.STRENGTH_SD_SCALE,
+            "series": series, "teams": sorted(teams, key=lambda x: -x["p_cup"]), "champion": champion}
+
+
+def run_playoff_sim(feat, fb: FeatureBuilder, season: int, fc, n_sims: int = SEASON_SIMS) -> dict:
+    """Once the regular season is over: series and Cup odds from the bracket
+    as it stands. Until the NHL lists every first-round series the stored
+    regular-season outlook is kept and marked as waiting."""
+    inp = playoff_sim.prepare(feat, fb.f.games, fc, season)
+    if inp is None:
+        old = db.get_document(f"season_sim:{season}")
+        if old and old.get("phase") == "regular":
+            db.put_document(f"season_sim:{season}", {**old, "phase": "awaiting_bracket"})
+        return {"status": "regular season complete; bracket not listed yet"}
+    today = dt.datetime.now(ET).date()
+    seed = int(today.strftime("%Y%m%d"))
+    out = playoff_sim.simulate(inp, n_sims=n_sims, seed=seed)
+    through = max(d for d, sc in zip(fb.f.games["game_date"], fb.f.games["home_score"]) if sc is not None and sc == sc)
+    doc = playoff_document(inp, out, season, fc.version, n_sims, seed, through)
+    db.put_document(f"season_sim:{season}", doc)
+    hist = db.get_document(f"season_sim_history:{season}")
+    if hist:   # keep the Cup-odds line going through the playoffs
+        day = str(today)
+        if hist["dates"] and hist["dates"][-1] == day:
+            hist["dates"].pop()
+            for v in hist["teams"].values():
+                for series in v.values():
+                    series.pop()
+        hist["dates"].append(day)
+        cup = {str(t["team_id"]): t["p_cup"] for t in doc["teams"]}
+        for tid, v in hist["teams"].items():
+            v["p_cup"].append(round(cup.get(tid, 0.0), 4))
+            v["p_playoffs"].append(None)
+            v["proj_points"].append(None)
+        db.put_document(f"season_sim_history:{season}", hist)
+    return {"status": "ok", "phase": doc["phase"], "round": doc["round"], "teams": len(doc["teams"])}
 
 
 def publish_needed(now: dt.datetime | None = None) -> bool:
@@ -194,6 +249,19 @@ def seed_season_validation() -> int:
     return 1
 
 
+def seed_playoff_validation() -> int:
+    """Same for the playoff-mode validation report."""
+    p = config.ARTIFACT_DIR / "backtest" / "playoffs.json"
+    if not p.exists():
+        return 0
+    committed = json.loads(p.read_text())
+    stored = db.get_document("playoff_validation")
+    if stored is not None and stored.get("generated_at") == committed.get("generated_at"):
+        return 0
+    db.put_document("playoff_validation", committed)
+    return 1
+
+
 def _step(report: dict, name: str, fn, critical: bool = False):
     t = time.time()
     try:
@@ -216,7 +284,7 @@ def run_daily(retrain: bool | None = None, days_ahead: int = 7) -> dict:
     today = dt.datetime.now(ET).date()
     try:
         _step(report, "reference", lambda: (nhl.seed_reference(), nhl.ingest_teams())[1], critical=True)
-        _step(report, "backtest_report", lambda: seed_backtest_report() + seed_season_validation())
+        _step(report, "backtest_report", lambda: seed_backtest_report() + seed_season_validation() + seed_playoff_validation())
         _step(report, "games", lambda: nhl.ingest_games([season]), critical=True)
         _step(report, "schedule", lambda: nhl.sync_schedule(today - dt.timedelta(days=3), weeks=3), critical=True)
         _step(report, "market_odds", market.ingest)

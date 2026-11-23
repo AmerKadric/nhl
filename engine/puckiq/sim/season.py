@@ -66,14 +66,19 @@ def interp_win(xs: np.ndarray, grid: np.ndarray, lh: np.ndarray, la: np.ndarray)
             + grid[i, j + 1] * (1 - fu) * fv + grid[i + 1, j + 1] * fu * fv)
 
 
-def series_prob(p_home: np.ndarray, p_road: np.ndarray, wins_needed: int = 4) -> np.ndarray:
-    """Probability the higher seed wins a best-of-seven, given its per-game
-    win probability at home and on the road."""
+def series_prob(p_home: np.ndarray, p_road: np.ndarray, wins_needed: int = 4, a0: int = 0, b0: int = 0) -> np.ndarray:
+    """Probability the team with home ice wins a best-of-seven, given its
+    per-game win probability at home and on the road. `a0` and `b0` are the
+    wins each side already has, so a series can be priced mid-way."""
     p_home, p_road = np.asarray(p_home, float), np.asarray(p_road, float)
     zero = np.zeros_like(p_home)
-    state = {(0, 0): np.ones_like(p_home)}
+    if a0 >= wins_needed:
+        return zero + 1.0
+    if b0 >= wins_needed:
+        return zero
+    state = {(a0, b0): np.ones_like(p_home)}
     won = zero.copy()
-    for g in range(2 * wins_needed - 1):
+    for g in range(a0 + b0, 2 * wins_needed - 1):
         p = p_home if g in HOME_GAMES else p_road
         nxt: dict[tuple[int, int], np.ndarray] = {}
         for (a, b), pr in state.items():
@@ -85,6 +90,15 @@ def series_prob(p_home: np.ndarray, p_road: np.ndarray, wins_needed: int = 4) ->
                 nxt[(a, b + 1)] = nxt.get((a, b + 1), zero) + pr * (1 - p)
         state = nxt
     return won
+
+
+def series_win_prob(xs, grid, llh, lla, off, dfn, rows, hi, lo, a0: int = 0, b0: int = 0) -> np.ndarray:
+    """P(`hi` wins the series) in each simulated world; `hi` has home ice.
+    `llh[i, j]` / `lla[i, j]` are the log scoring rates of home team i and
+    away team j; `off` / `dfn` are that world's team-strength draws."""
+    p_h = interp_win(xs, grid, llh[hi, lo] + off[rows, hi] + dfn[rows, lo], lla[hi, lo] + off[rows, lo] + dfn[rows, hi])
+    p_r = 1.0 - interp_win(xs, grid, llh[lo, hi] + off[rows, lo] + dfn[rows, hi], lla[lo, hi] + off[rows, hi] + dfn[rows, lo])
+    return series_prob(p_h, p_r, a0=a0, b0=b0)
 
 
 def _counts(rng: np.random.Generator, lam: np.ndarray, dispersion: float) -> np.ndarray:
@@ -196,42 +210,9 @@ def prepare(feat: pd.DataFrame, games: pd.DataFrame, fc, season: int, alignment:
     feats = _team_features(fut, team_ids)
     if len(feats) < len(team_ids):
         return None   # a team with nothing left to play: the regular season is ending
-    beta = dict(zip(fc.glm.cols, fc.glm.beta[1:]))
-    kf = load_params().kf
     remaining = np.bincount(np.concatenate([home, away]), minlength=len(team_ids))
-    sd_off, sd_def = np.zeros(len(team_ids)), np.zeros(len(team_ids))
-    for t, i in idx.items():
-        vo = vd = 0.0
-        for m in ("xg5", "xga", "g"):
-            if f"t_off_{m}" in beta:
-                drift = kf[m].q * remaining[i] / 2.0   # average extra variance over the games left
-                vo += beta[f"t_off_{m}"] ** 2 * (feats[t][f"poff_{m}"] + drift)
-                vd += beta[f"o_def_{m}"] ** 2 * (feats[t][f"pdef_{m}"] + drift)
-        sd_off[i], sd_def[i] = math.sqrt(vo), math.sqrt(vd)
-
-    # playoff games between every ordered pair, on neutral rest
-    neutral = {"rest": 2.0, "b2b": 0.0, "g7": 3.0, "travel": 0.0, "tz": 0.0, "road_streak": 0.0,
-               "lu_gs": 0.0, "lu_toi": 0.0, "lu_gs_conf": 0.0, "lu_toi_conf": 0.0}
-    lg = float(fut["lg_g"].iloc[0])
-    pairs = []
-    for hi in team_ids:
-        for lo in team_ids:
-            if hi == lo:
-                continue
-            r = {"game_id": idx[hi] * 100 + idx[lo], "season": season, "game_date": fut["game_date"].iloc[0], "playoff": 1.0,
-                 "lg_g": lg, "home_reg_goals": np.nan, "away_reg_goals": np.nan}
-            for c in TEAM_FEATS:
-                r[f"h_{c}"] = neutral.get(c, feats[hi][c])
-                r[f"a_{c}"] = neutral.get(c, feats[lo][c])
-            pairs.append(r)
-    prow = team_rows(pd.DataFrame(pairs), "projected")
-    ll = fc.glm.log_rate(prow)
-    n = len(team_ids)
-    llh, lla = np.zeros((n, n)), np.zeros((n, n))
-    gid = prow["game_id"].to_numpy()
-    is_home = prow["is_home"].to_numpy() == 1
-    llh[gid[is_home] // 100, gid[is_home] % 100] = ll[is_home]
-    lla[gid[~is_home] // 100, gid[~is_home] % 100] = ll[~is_home]
+    sd_off, sd_def = strength_sd(fc, feats, team_ids, remaining)
+    llh, lla = pair_rates(fc, feats, team_ids, season, fut["game_date"].iloc[0], float(fut["lg_g"].iloc[0]))
 
     return SeasonInputs(
         team_ids=team_ids, conference=[alignment[t][0] for t in team_ids], division=[alignment[t][1] for t in team_ids],
@@ -304,11 +285,8 @@ def simulate(inp: SeasonInputs, n_sims: int = 10000, seed: int = 0, batch: int =
 
         def series(hi, lo):
             """Winner of a best-of-seven; `hi` has home ice."""
-            p_h = interp_win(xs, grid, inp.log_lam_home[hi, lo] + off[rows, hi] + dfn[rows, lo],
-                             inp.log_lam_away[hi, lo] + off[rows, lo] + dfn[rows, hi])
-            p_r = 1.0 - interp_win(xs, grid, inp.log_lam_home[lo, hi] + off[rows, lo] + dfn[rows, hi],
-                                   inp.log_lam_away[lo, hi] + off[rows, hi] + dfn[rows, lo])
-            return np.where(rng.random(b) < series_prob(p_h, p_r), hi, lo)
+            p = series_win_prob(xs, grid, inp.log_lam_home, inp.log_lam_away, off, dfn, rows, hi, lo)
+            return np.where(rng.random(b) < p, hi, lo)
 
         def by_record(x, y):
             """(better record, worse record): home ice in the later rounds."""
@@ -372,6 +350,58 @@ def by_seed(x, y, division_winner, key, rows):
     y_is = y == division_winner
     better = np.where(x_is, True, np.where(y_is, False, key[rows, x] >= key[rows, y]))
     return np.where(better, x, y), np.where(better, y, x)
+
+
+def strength_sd(fc, feats: dict[int, dict], team_ids: list[int], remaining: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Standard deviation of each team's offence and defence on the log
+    scoring-rate scale: the rating filter's posterior spread plus the drift
+    expected over the games remaining."""
+    beta = dict(zip(fc.glm.cols, fc.glm.beta[1:]))
+    kf = load_params().kf
+    sd_off, sd_def = np.zeros(len(team_ids)), np.zeros(len(team_ids))
+    for i, t in enumerate(team_ids):
+        vo = vd = 0.0
+        for m in ("xg5", "xga", "g"):
+            if f"t_off_{m}" in beta:
+                drift = kf[m].q * remaining[i] / 2.0   # average extra variance over the games left
+                vo += beta[f"t_off_{m}"] ** 2 * (feats[t][f"poff_{m}"] + drift)
+                vd += beta[f"o_def_{m}"] ** 2 * (feats[t][f"pdef_{m}"] + drift)
+        sd_off[i], sd_def[i] = math.sqrt(vo), math.sqrt(vd)
+    return sd_off, sd_def
+
+
+NEUTRAL_REST = {"rest": 2.0, "b2b": 0.0, "g7": 3.0, "travel": 0.0, "tz": 0.0, "road_streak": 0.0}
+NEUTRAL_LINEUP = {"lu_gs": 0.0, "lu_toi": 0.0, "lu_gs_conf": 0.0, "lu_toi_conf": 0.0}
+
+
+def pair_rates(fc, feats: dict[int, dict], team_ids: list[int], season: int, game_date, lg: float,
+               current_lineups: bool = False) -> tuple[np.ndarray, np.ndarray]:
+    """Log scoring rates of a playoff game between every ordered pair of
+    teams, [home, away], on neutral rest. Lineups are taken as usual unless
+    `current_lineups` is set (playoffs are near enough for today's absences
+    to matter; a season months ahead is not)."""
+    neutral = dict(NEUTRAL_REST) if current_lineups else {**NEUTRAL_REST, **NEUTRAL_LINEUP}
+    idx = {t: i for i, t in enumerate(team_ids)}
+    pairs = []
+    for hi in team_ids:
+        for lo in team_ids:
+            if hi == lo:
+                continue
+            r = {"game_id": idx[hi] * 100 + idx[lo], "season": season, "game_date": game_date, "playoff": 1.0,
+                 "lg_g": lg, "home_reg_goals": np.nan, "away_reg_goals": np.nan}
+            for c in TEAM_FEATS:
+                r[f"h_{c}"] = neutral.get(c, feats[hi][c])
+                r[f"a_{c}"] = neutral.get(c, feats[lo][c])
+            pairs.append(r)
+    prow = team_rows(pd.DataFrame(pairs), "projected")
+    ll = fc.glm.log_rate(prow)
+    n = len(team_ids)
+    llh, lla = np.zeros((n, n)), np.zeros((n, n))
+    gid = prow["game_id"].to_numpy()
+    is_home = prow["is_home"].to_numpy() == 1
+    llh[gid[is_home] // 100, gid[is_home] % 100] = ll[is_home]
+    lla[gid[~is_home] // 100, gid[~is_home] % 100] = ll[~is_home]
+    return llh, lla
 
 
 def alignment_from_teams(teams: pd.DataFrame) -> dict[int, tuple[str, str]]:
