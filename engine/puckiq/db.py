@@ -413,7 +413,9 @@ def upsert(conn, table: Table, rows: Iterable[dict], keys: Sequence[str] | None 
                 stmt = stmt.on_conflict_do_update(index_elements=keys, set_={c: stmt.excluded[c] for c in cols})
             else:
                 stmt = stmt.on_conflict_do_nothing(index_elements=keys)
-            n += conn.execute(stmt).rowcount or 0
+            rc = conn.execute(stmt).rowcount
+            # PostgreSQL reports -1 for batched multi-row statements
+            n += rc if rc is not None and rc >= 0 else len(part)
     return n
 
 

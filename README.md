@@ -89,18 +89,27 @@ npm run dev                                              # site on http://localh
 | `puckiq backtest` | Walk-forward backtest of every candidate model |
 | `puckiq tune` | Re-tune rating parameters on pre-2017 seasons only |
 | `puckiq status` | Data freshness for each feed |
+| `puckiq copy-db --from <url>` | Copy every table from another database into `DATABASE_URL` |
 | `pytest` (in `engine/`) | Test suite; uses a temporary database and no network |
 
 Every job is idempotent. A failure in a critical feed aborts publishing; a stale secondary feed is recorded with the forecasts and shown on the site.
 
-## Deploying
+## Deployment
 
-Nothing is hosted yet. The pieces are ready:
+| Piece | Where | Notes |
+|---|---|---|
+| Site | Vercel project `puckiq` (root `web/`) | https://puckiq-dusky.vercel.app |
+| API | Vercel project `puckiq-api` (root `engine/`) | https://puckiq-api.vercel.app, one Python function |
+| Database | Neon Postgres `puckiq-db`, via the Vercel Marketplace | Free plan; attached to `puckiq-api`, which receives `DATABASE_URL` |
+| Pipeline | GitHub Actions workflow `pipeline` | Full run daily at 13:00 UTC; light refresh every 30 minutes, 22:00–04:59 UTC |
 
-1. **Database**: create a PostgreSQL database and set `DATABASE_URL`. PostgreSQL support is implemented but has only been exercised on SQLite so far.
-2. **Pipeline**: add `DATABASE_URL` as a repository secret, then run the `pipeline` workflow once with `bootstrap`. After that it runs daily and every 20 minutes through the game window.
-3. **API**: build `engine/Dockerfile` from the repository root and run it anywhere that hosts containers, with `DATABASE_URL` and `PUCKIQ_CORS_ORIGINS` set.
-4. **Site**: deploy `web/` (for example on Vercel) with `PUCKIQ_API_URL` pointing at the API.
+- Both Vercel projects are connected to this repository: a push to `main` redeploys them.
+- The site reads `PUCKIQ_API_URL`; the API reads `DATABASE_URL` and `PUCKIQ_CORS_ORIGINS`. All are set in Vercel.
+- The pipeline reads the `DATABASE_URL` repository secret. Without it every run exits early.
+- The API installs only the runtime dependencies. Tuning, backtesting, training and the pipeline need `engine[train]`.
+- To run a command against the hosted database from a workstation, set `DATABASE_URL` for that process (for example from `vercel env pull`) and never commit it.
+
+Moving to another host: `engine/Dockerfile` builds the same API as a container, and `puckiq copy-db --from <url>` copies every table between databases while keeping forecast history linked.
 
 ## Data and licensing
 
