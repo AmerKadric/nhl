@@ -23,6 +23,7 @@ from ..backtest import walkforward
 from ..features.build import FeatureBuilder, build_all
 from ..ingest import moneypuck, nhl
 from ..models.forecaster import Forecaster
+from ..sim import season as season_sim
 from . import publish as pub
 from .settle import settle
 
@@ -110,6 +111,46 @@ def store_site_documents(season: int) -> int:
     return 3 if report else 2
 
 
+SEASON_SIMS = 20000
+
+
+def run_season_sim(feat, fb: FeatureBuilder, season: int, n_sims: int = SEASON_SIMS) -> dict:
+    """Simulate the rest of the season with the active model and store the
+    result, plus one line per day of history, as documents for the site."""
+    am = pub.active_model()
+    if am is None:
+        return {"status": "no model"}
+    _, fc = am
+    inp = season_sim.prepare(feat, fb.f.games, fc, season, season_sim.alignment_from_teams(fb.f.teams))
+    if inp is None:
+        return {"status": "regular season complete"}
+    inp.sd_off, inp.sd_def = inp.sd_off * season_sim.STRENGTH_SD_SCALE, inp.sd_def * season_sim.STRENGTH_SD_SCALE
+    today = dt.datetime.now(ET).date()
+    seed = int(today.strftime("%Y%m%d"))
+    out = season_sim.simulate(inp, n_sims=n_sims, seed=seed)
+    through = max(d for d, sc in zip(fb.f.games["game_date"], fb.f.games["home_score"]) if sc is not None and sc == sc)
+    teams = [{k: (v.item() if hasattr(v, "item") else v) for k, v in r.items()} for r in out.to_dict("records")]
+    db.put_document(f"season_sim:{season}", {
+        "season": season, "generated_at": db.utcnow().isoformat(timespec="seconds"), "results_through": str(through),
+        "model_version": fc.version, "n_sims": n_sims, "seed": seed, "games_remaining": int(len(inp.home)),
+        "strength_sd_scale": season_sim.STRENGTH_SD_SCALE, "teams": teams})
+    hist = db.get_document(f"season_sim_history:{season}") or {"dates": [], "teams": {}}
+    day = str(today)
+    if hist["dates"] and hist["dates"][-1] == day:      # re-run on the same day replaces that day's line
+        hist["dates"].pop()
+        for v in hist["teams"].values():
+            for series in v.values():
+                series.pop()
+    hist["dates"].append(day)
+    for t in teams:
+        h = hist["teams"].setdefault(str(t["team_id"]), {"p_playoffs": [], "p_cup": [], "proj_points": []})
+        h["p_playoffs"].append(round(t["p_playoffs"], 4))
+        h["p_cup"].append(round(t["p_cup"], 4))
+        h["proj_points"].append(round(t["proj_points"], 1))
+    db.put_document(f"season_sim_history:{season}", hist)
+    return {"status": "ok", "teams": len(teams), "games_remaining": int(len(inp.home))}
+
+
 def publish_needed(now: dt.datetime | None = None) -> bool:
     """True when a game is in its pre-game window without a forecast based
     on confirmed goalies: the only thing a refresh can change."""
@@ -138,6 +179,19 @@ def seed_backtest_report() -> int:
     return 1
 
 
+def seed_season_validation() -> int:
+    """Same for the season-simulation validation report."""
+    p = config.ARTIFACT_DIR / "backtest" / "season_sim.json"
+    if not p.exists():
+        return 0
+    committed = json.loads(p.read_text())
+    stored = db.get_document("season_sim_validation")
+    if stored is not None and stored.get("generated_at") == committed.get("generated_at"):
+        return 0
+    db.put_document("season_sim_validation", committed)
+    return 1
+
+
 def _step(report: dict, name: str, fn, critical: bool = False):
     t = time.time()
     try:
@@ -160,7 +214,7 @@ def run_daily(retrain: bool | None = None, days_ahead: int = 7) -> dict:
     today = dt.datetime.now(ET).date()
     try:
         _step(report, "reference", lambda: (nhl.seed_reference(), nhl.ingest_teams())[1], critical=True)
-        _step(report, "backtest_report", seed_backtest_report)
+        _step(report, "backtest_report", lambda: seed_backtest_report() + seed_season_validation())
         _step(report, "games", lambda: nhl.ingest_games([season]), critical=True)
         _step(report, "schedule", lambda: nhl.sync_schedule(today - dt.timedelta(days=3), weeks=3), critical=True)
         _step(report, "goalie_logs", lambda: nhl.ingest_goalie_logs([season], since=today - dt.timedelta(days=14)))
@@ -184,6 +238,7 @@ def run_daily(retrain: bool | None = None, days_ahead: int = 7) -> dict:
         _step(report, "publish", lambda: pub.publish(fb, feat, days_ahead=days_ahead, trigger="scheduled", freshness=fresh), critical=True)
         _step(report, "settle", settle)
         _step(report, "site_documents", lambda: store_site_documents(season))
+        _step(report, "season_simulation", lambda: run_season_sim(feat, fb, season))
     except PipelineAbort as e:
         report["aborted_at"] = str(e)
     report["finished_at"] = db.utcnow().isoformat(timespec="seconds")

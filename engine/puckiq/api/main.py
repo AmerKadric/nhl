@@ -301,6 +301,11 @@ def accuracy_history(source: str = Query("forward", pattern="^(forward|backtest)
     return q.history(source, season, tid, limit, offset)
 
 
+@app.get("/v1/season")
+def season():
+    return q.season_outlook(q.meta()["season"])
+
+
 @app.get("/v1/teams")
 def teams():
     season = q.meta()["season"]
@@ -328,5 +333,6 @@ def team(abbrev: str):
     return {"team": t, "season": season, "summary": q.season_table(season).get(t["id"]),
             "rating_ranges": q.league_rating_ranges(season), "rating_history": q.rating_history(t["id"], season),
             "goalies": q.team_goalies(t["id"], season), "upcoming": upcoming, "recent": recent, "games_remaining": int(remaining or 0),
+            "outlook": next((x for x in ((q.season_outlook(season)["simulation"] or {}).get("teams") or []) if x["team_id"] == t["id"]), None),
             "forward_history": q.history("forward", season, t["id"], 20, 0)["rows"],
             "backtest_history": q.history("backtest", season, t["id"], 20, 0)["rows"]}

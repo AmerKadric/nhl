@@ -7,7 +7,7 @@ import { GameCard } from "@/components/GameCard";
 import { RatingChart } from "@/components/interactive";
 import { Chip, PageSkeleton, Section, Stat, TeamLogo, Unavailable } from "@/components/ui";
 import { apiCached } from "@/lib/api";
-import { fx, onDark, pct, recordStr, seasonLabel, signed } from "@/lib/format";
+import { fx, odds, onDark, pct, recordStr, seasonLabel, signed } from "@/lib/format";
 import type { HistoryRow, RatingRanges, TeamPage } from "@/lib/types";
 
 export const metadata: Metadata = { title: "Team intelligence" };
@@ -86,6 +86,24 @@ async function Team({ params }: { params: PageProps<"/teams/[abbrev]">["params"]
           )}
         </div>
       </header>
+
+      {d.outlook && (
+        <Section
+          id="outlook"
+          eyebrow="Season outlook"
+          title="Where this season is heading"
+          note="From the daily season simulation: probabilities, not predictions."
+          aside={<Link href="/season" className="text-sm text-ice hover:underline">Full standings projection</Link>}
+        >
+          <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
+            <Stat label="Projected points" value={d.outlook.proj_points.toFixed(0)} sub={`80% range ${d.outlook.points_p10.toFixed(0)}–${d.outlook.points_p90.toFixed(0)}`} />
+            <Stat label="Make playoffs" value={odds(d.outlook.p_playoffs)} />
+            <Stat label="Win division" value={odds(d.outlook.p_division)} />
+            <Stat label="Reach conf. final" value={odds(d.outlook.p_conf_final)} />
+            <Stat label="Win Stanley Cup" value={odds(d.outlook.p_cup)} />
+          </div>
+        </Section>
+      )}
 
       {!s ? (
         <div className="mt-8"><Unavailable title="No games played yet this season." /></div>

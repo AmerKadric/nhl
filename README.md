@@ -12,6 +12,7 @@ PUCKIQ forecasts the final score of every NHL game with a statistical model, sho
 - Explains each forecast with the model's own factor contributions.
 - Lets you re-run a matchup in the Prediction Lab with a different goalie or schedule situation.
 - Publishes forecasts as append-only versions and scores every one automatically after the game.
+- Simulates the rest of the season every day for projected standings, playoff odds and Stanley Cup odds.
 
 ## Results
 
@@ -31,6 +32,23 @@ Walk-forward backtest on 12,247 games (2017–18 to 2026–27, the last season i
 - This is a simulation. The record of forecasts actually published before games is tracked separately on the Accuracy page and is still short.
 
 The full report is in [`artifacts/backtest/summary.json`](artifacts/backtest/summary.json).
+
+### Season simulation
+
+Checked by re-running the simulation as of December 1 and February 1 in 7 past seasons, with everything after each date hidden (444 team-checkpoints):
+
+| Measure | Result |
+|---|---|
+| Playoff odds, Brier score | 0.109 (0.185 for "whoever holds a spot today", 0.250 for a coin flip) |
+| Teams given 70–90% to make the playoffs | made it 82% of the time (77 cases) |
+| Final points, average miss | 6.3 points |
+| Actual points inside the 80% range | 81% of the time |
+
+- One setting is tuned on this history: the simulation's uncertainty about team strength is doubled, because the rating filter alone was too sure of itself over a full season. It was chosen on four seasons and checked on the other three.
+- Cup odds rest on 14 champion-checkpoints, too few to validate.
+- Trades, injuries and call-ups are not modelled.
+
+The report is in [`artifacts/backtest/season_sim.json`](artifacts/backtest/season_sim.json).
 
 ## How it works
 
@@ -55,11 +73,11 @@ NHL APIs + MoneyPuck files
 | `engine/puckiq/ingest` | NHL and MoneyPuck ingestion |
 | `engine/puckiq/features` | Leak-free pre-game features and rating systems |
 | `engine/puckiq/models` | Rate models, design matrices, production forecaster |
-| `engine/puckiq/sim` | Final-score simulator (exact and Monte Carlo) |
+| `engine/puckiq/sim` | Final-score simulator (exact and Monte Carlo) and the season simulator |
 | `engine/puckiq/backtest` | Walk-forward backtest and metrics |
 | `engine/puckiq/pipeline` | Daily and refresh jobs, publishing, settlement |
 | `engine/puckiq/api` | HTTP API, including the scenario lab |
-| `engine/tests` | 60 tests: simulator rules, look-ahead leakage, lineups, settlement, API |
+| `engine/tests` | 68 tests: simulator rules, look-ahead leakage, lineups, season simulation, settlement, API |
 | `web/` | Next.js 16 front end |
 | `artifacts/` | Tuned rating parameters and the backtest report |
 
@@ -89,6 +107,8 @@ npm run dev                                              # site on http://localh
 | `puckiq daily` | Full run: results, advanced stats, ratings, weekly retrain, publish, settle |
 | `puckiq refresh` | Light run: game states, goalie confirmations, forecast updates, settle |
 | `puckiq backtest` | Walk-forward backtest of every candidate model |
+| `puckiq season-sim` | Simulate the rest of the season and store the result (also part of `daily`) |
+| `puckiq season-backtest` | Validate the season simulation against past seasons |
 | `puckiq tune` | Re-tune rating parameters on pre-2017 seasons only |
 | `puckiq status` | Data freshness for each feed |
 | `puckiq copy-db --from <url>` | Copy every table from another database into `DATABASE_URL` |

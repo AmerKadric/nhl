@@ -43,6 +43,8 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("refresh", help="light refresh: states, goalie confirmations, forecasts, settlement")
     sub.add_parser("settle", help="settle finished forecasts")
     sub.add_parser("status", help="print data freshness")
+    sub.add_parser("season-sim", help="simulate the rest of the season and store the result")
+    sub.add_parser("season-backtest", help="validate the season simulation against past seasons")
     p = sub.add_parser("copy-db", help="copy all tables from another database into DATABASE_URL")
     p.add_argument("--from", dest="source", required=True, help="source SQLAlchemy URL, e.g. sqlite:///data/puckiq.db")
     p.add_argument("--tables", help="comma-separated table names; default is every table")
@@ -98,6 +100,17 @@ def main(argv: list[str] | None = None) -> int:
     elif args.cmd == "status":
         from .pipeline.daily import freshness
         print(json.dumps(freshness(), indent=1))
+    elif args.cmd == "season-sim":
+        from .features.build import build_all
+        from .pipeline.daily import current_season, run_season_sim
+        feat, fb = build_all()
+        print(json.dumps(run_season_sim(feat, fb, current_season())))
+    elif args.cmd == "season-backtest":
+        from .backtest import season as sb
+        from .pipeline.daily import backtest_report
+        from .sim.season import STRENGTH_SD_SCALE
+        out = sb.run((backtest_report() or {}).get("chosen_groups"), scale=STRENGTH_SD_SCALE)
+        print(json.dumps(out["summary"]["overall"], indent=1))
     elif args.cmd == "copy-db":
         target = db.engine().url.render_as_string(hide_password=True)
         print(f"copying into {target}")

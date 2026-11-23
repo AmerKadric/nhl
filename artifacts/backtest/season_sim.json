@@ -1,0 +1,245 @@
+{
+ "overall": {
+  "team_seasons": 444,
+  "playoff_brier": 0.10902110414414413,
+  "playoff_brier_in_position_baseline": 0.18468468468468469,
+  "playoff_brier_coin_flip": 0.25,
+  "playoff_log_loss": 0.3402461463645557,
+  "points_mae": 6.322259234234234,
+  "points_interval_coverage": 0.8108108108108109,
+  "points_interval_nominal": 0.8,
+  "champion_mean_prob": 0.08625714285714285,
+  "champion_log_prob": -2.7431670477745227,
+  "champion_uniform_prob": 0.0625,
+  "n_champions": 14
+ },
+ "by_checkpoint": {
+  "02-01": {
+   "team_seasons": 222,
+   "playoff_brier": 0.09102345405405404,
+   "playoff_brier_in_position_baseline": 0.13513513513513514,
+   "playoff_brier_coin_flip": 0.25,
+   "playoff_log_loss": 0.2829287351556293,
+   "points_mae": 4.8954126126126125,
+   "points_interval_coverage": 0.8198198198198198,
+   "points_interval_nominal": 0.8,
+   "champion_mean_prob": 0.09311428571428572,
+   "champion_log_prob": -2.7153160544114274,
+   "champion_uniform_prob": 0.0625,
+   "n_champions": 7
+  },
+  "12-01": {
+   "team_seasons": 222,
+   "playoff_brier": 0.12701875423423425,
+   "playoff_brier_in_position_baseline": 0.23423423423423423,
+   "playoff_brier_coin_flip": 0.25,
+   "playoff_log_loss": 0.39756355757348216,
+   "points_mae": 7.749105855855856,
+   "points_interval_coverage": 0.8018018018018018,
+   "points_interval_nominal": 0.8,
+   "champion_mean_prob": 0.07940000000000001,
+   "champion_log_prob": -2.771018041137618,
+   "champion_uniform_prob": 0.0625,
+   "n_champions": 7
+  }
+ },
+ "by_season": {
+  "2017": {
+   "team_seasons": 62,
+   "playoff_brier": 0.16020260709677417,
+   "playoff_brier_in_position_baseline": 0.1935483870967742,
+   "playoff_brier_coin_flip": 0.25,
+   "playoff_log_loss": 0.47202431454822397,
+   "points_mae": 8.052550000000002,
+   "points_interval_coverage": 0.7096774193548387,
+   "points_interval_nominal": 0.8,
+   "champion_mean_prob": 0.0481,
+   "champion_log_prob": -3.0467796450500253,
+   "champion_uniform_prob": 0.0625,
+   "n_champions": 2
+  },
+  "2018": {
+   "team_seasons": 62,
+   "playoff_brier": 0.09577302548387095,
+   "playoff_brier_in_position_baseline": 0.16129032258064516,
+   "playoff_brier_coin_flip": 0.25,
+   "playoff_log_loss": 0.30948002714456957,
+   "points_mae": 5.940459677419354,
+   "points_interval_coverage": 0.7741935483870968,
+   "points_interval_nominal": 0.8,
+   "champion_mean_prob": 0.012799999999999999,
+   "champion_log_prob": -4.361371217164748,
+   "champion_uniform_prob": 0.0625,
+   "n_champions": 2
+  },
+  "2021": {
+   "team_seasons": 64,
+   "playoff_brier": 0.06290084312500001,
+   "playoff_brier_in_position_baseline": 0.125,
+   "playoff_brier_coin_flip": 0.25,
+   "playoff_log_loss": 0.2188312923114777,
+   "points_mae": 6.828984375000001,
+   "points_interval_coverage": 0.796875,
+   "points_interval_nominal": 0.8,
+   "champion_mean_prob": 0.1972,
+   "champion_log_prob": -1.643905599004107,
+   "champion_uniform_prob": 0.0625,
+   "n_champions": 2
+  },
+  "2022": {
+   "team_seasons": 64,
+   "playoff_brier": 0.09239703875,
+   "playoff_brier_in_position_baseline": 0.15625,
+   "playoff_brier_coin_flip": 0.25,
+   "playoff_log_loss": 0.28254069618494043,
+   "points_mae": 5.7138125,
+   "points_interval_coverage": 0.84375,
+   "points_interval_nominal": 0.8,
+   "champion_mean_prob": 0.05275,
+   "champion_log_prob": -3.097402735563006,
+   "champion_uniform_prob": 0.0625,
+   "n_champions": 2
+  },
+  "2023": {
+   "team_seasons": 64,
+   "playoff_brier": 0.094463515,
+   "playoff_brier_in_position_baseline": 0.21875,
+   "playoff_brier_coin_flip": 0.25,
+   "playoff_log_loss": 0.29218585204671965,
+   "points_mae": 5.1447171874999995,
+   "points_interval_coverage": 0.90625,
+   "points_interval_nominal": 0.8,
+   "champion_mean_prob": 0.07905,
+   "champion_log_prob": -2.56923149190205,
+   "champion_uniform_prob": 0.0625,
+   "n_champions": 2
+  },
+  "2024": {
+   "team_seasons": 64,
+   "playoff_brier": 0.10933268562500001,
+   "playoff_brier_in_position_baseline": 0.1875,
+   "playoff_brier_coin_flip": 0.25,
+   "playoff_log_loss": 0.3701120811949862,
+   "points_mae": 6.595564062499999,
+   "points_interval_coverage": 0.8125,
+   "points_interval_nominal": 0.8,
+   "champion_mean_prob": 0.09575,
+   "champion_log_prob": -2.3474074226029575,
+   "champion_uniform_prob": 0.0625,
+   "n_champions": 2
+  },
+  "2025": {
+   "team_seasons": 64,
+   "playoff_brier": 0.1492634334375,
+   "playoff_brier_in_position_baseline": 0.25,
+   "playoff_brier_coin_flip": 0.25,
+   "playoff_log_loss": 0.4397053876510874,
+   "points_mae": 6.0218671875,
+   "points_interval_coverage": 0.828125,
+   "points_interval_nominal": 0.8,
+   "champion_mean_prob": 0.11815,
+   "champion_log_prob": -2.1360712231347643,
+   "champion_uniform_prob": 0.0625,
+   "n_champions": 2
+  }
+ },
+ "calibration": [
+  {
+   "lo": 0.0,
+   "hi": 0.1,
+   "n": 94,
+   "mean_pred": 0.023313829787234047,
+   "observed": 0.031914893617021274
+  },
+  {
+   "lo": 0.1,
+   "hi": 0.3,
+   "n": 75,
+   "mean_pred": 0.20312,
+   "observed": 0.16
+  },
+  {
+   "lo": 0.3,
+   "hi": 0.7,
+   "n": 98,
+   "mean_pred": 0.4853571428571428,
+   "observed": 0.4897959183673469
+  },
+  {
+   "lo": 0.7,
+   "hi": 0.9,
+   "n": 77,
+   "mean_pred": 0.8078324675324676,
+   "observed": 0.8181818181818182
+  },
+  {
+   "lo": 0.9,
+   "hi": 1.0,
+   "n": 100,
+   "mean_pred": 0.9680640000000003,
+   "observed": 0.98
+  }
+ ],
+ "generated_at": "2026-11-23T17:50:20+00:00",
+ "seasons": [
+  2017,
+  2018,
+  2021,
+  2022,
+  2023,
+  2024,
+  2025
+ ],
+ "checkpoints": [
+  "12-01",
+  "02-01"
+ ],
+ "n_sims": 10000,
+ "strength_sd_scale": 2.0,
+ "scale_study": {
+  "fit_seasons": [
+   2017,
+   2018,
+   2021,
+   2022
+  ],
+  "nominal_coverage": 0.8,
+  "grid": [
+   {
+    "scale": 1.0,
+    "fit_coverage": 0.7261904761904762,
+    "later_coverage": 0.7760416666666666,
+    "fit_brier": 0.10109867239858905,
+    "later_brier": 0.11808435358796295
+   },
+   {
+    "scale": 1.5,
+    "fit_coverage": 0.753968253968254,
+    "later_coverage": 0.8177083333333334,
+    "fit_brier": 0.10207652755731923,
+    "later_brier": 0.11757148090277776
+   },
+   {
+    "scale": 2.0,
+    "fit_coverage": 0.7817460317460317,
+    "later_coverage": 0.8489583333333334,
+    "fit_brier": 0.10230973897707231,
+    "later_brier": 0.11769275260416667
+   },
+   {
+    "scale": 2.5,
+    "fit_coverage": 0.8293650793650794,
+    "later_coverage": 0.8697916666666666,
+    "fit_brier": 0.10297116269841271,
+    "later_brier": 0.11781344473379629
+   },
+   {
+    "scale": 3.0,
+    "fit_coverage": 0.8571428571428571,
+    "later_coverage": 0.8958333333333334,
+    "fit_brier": 0.10476727380952382,
+    "later_brier": 0.11878668055555557
+   }
+  ]
+ }
+}

@@ -4,6 +4,11 @@ export const pct = (v: number | null | undefined, d = 0) => (v == null ? "—" :
 export const fx = (v: number | null | undefined, d = 2) => (v == null ? "—" : v.toFixed(d));
 export const signed = (v: number | null | undefined, d = 2) => (v == null ? "—" : `${v > 0 ? "+" : v < 0 ? "−" : ""}${Math.abs(v).toFixed(d)}`);
 
+/** Simulated odds. The extremes are shown as bounds, because a simulation
+ * can only say an event was very rare or very common, not that it is settled. */
+export const odds = (p: number | null | undefined) =>
+  p == null ? "—" : p < 0.001 ? "<0.1%" : p > 0.999 ? ">99.9%" : p < 0.1 || p > 0.9 ? `${(p * 100).toFixed(1)}%` : `${(p * 100).toFixed(0)}%`;
+
 /** "about 1 in 12" for small probabilities. */
 export const oneIn = (p: number) => (p > 0 ? `about 1 in ${Math.max(1, Math.round(1 / p))}` : "—");
 

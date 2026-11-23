@@ -445,6 +445,20 @@ def history(source: str, season: int | None, team_id: int | None, limit: int, of
     return {"source": source, "total": int(total or 0), "limit": limit, "offset": offset, "rows": out}
 
 
+def season_outlook(season: int) -> dict:
+    """The stored season simulation, its day-by-day history and its
+    validation report. Nothing is simulated at request time."""
+    def load():
+        sim = db.get_document(f"season_sim:{season}")
+        if sim:
+            tm = teams_map()
+            for t in sim["teams"]:
+                t["team"] = _team_brief(t["team_id"]) if t["team_id"] in tm else None
+        return {"season": season, "simulation": sim, "history": db.get_document(f"season_sim_history:{season}"),
+                "validation": db.get_document("season_sim_validation")}
+    return cached(f"season_outlook:{season}", 600, load)
+
+
 # --- teams -------------------------------------------------------------------
 def rating_history(team_id: int, season: int) -> list[dict]:
     R = db.team_ratings

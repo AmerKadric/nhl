@@ -341,4 +341,64 @@ export type TeamPage = {
   games_remaining: number;
   forward_history: HistoryRow[];
   backtest_history: HistoryRow[];
+  outlook?: SeasonTeam | null;
+};
+
+export type SeasonTeam = {
+  team_id: number;
+  team: TeamBrief | null;
+  conference: string;
+  division: string;
+  gp: number;
+  w: number;
+  l: number;
+  otl: number;
+  points: number;
+  games_remaining: number;
+  proj_points: number;
+  points_p10: number;
+  points_p50: number;
+  points_p90: number;
+  p_playoffs: number;
+  p_division: number;
+  p_round2: number;
+  p_conf_final: number;
+  p_final: number;
+  p_cup: number;
+};
+
+export type SeasonValidationBlock = {
+  team_seasons: number;
+  playoff_brier: number;
+  playoff_brier_in_position_baseline: number;
+  playoff_log_loss: number;
+  points_mae: number;
+  points_interval_coverage: number;
+  champion_mean_prob: number;
+  champion_uniform_prob: number;
+  n_champions: number;
+};
+
+export type SeasonOutlook = {
+  season: number;
+  simulation: {
+    season: number;
+    generated_at: string;
+    results_through: string;
+    model_version: string;
+    n_sims: number;
+    games_remaining: number;
+    teams: SeasonTeam[];
+  } | null;
+  history: { dates: string[]; teams: Record<string, { p_playoffs: number[]; p_cup: number[]; proj_points: number[] }> } | null;
+  validation: {
+    generated_at: string;
+    seasons: number[];
+    checkpoints: string[];
+    overall: SeasonValidationBlock;
+    by_checkpoint: Record<string, SeasonValidationBlock>;
+    calibration: CalBin[];
+    strength_sd_scale?: number;
+    scale_study?: { fit_seasons: number[]; grid: { scale: number; fit_coverage: number | null; later_coverage: number | null }[] };
+  } | null;
 };
