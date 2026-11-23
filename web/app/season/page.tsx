@@ -42,7 +42,7 @@ function OddsBar({ p, strong }: { p: number; strong?: boolean }) {
 function DivisionTable({ name, teams }: { name: string; teams: SeasonTeam[] }) {
   return (
     <div className="panel overflow-x-auto">
-      <table className="w-full min-w-[820px] text-sm">
+      <table className="w-full min-w-[940px] whitespace-nowrap text-sm">
         <caption className="border-b border-line px-4 py-2.5 text-left">
           <span className="display text-lg font-semibold tracking-wide text-ink">{name}</span>
         </caption>
