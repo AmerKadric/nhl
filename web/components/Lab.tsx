@@ -10,6 +10,12 @@ import { ScoreMatrix } from "./interactive";
 type Side = "home" | "away";
 type State = { home_goalie_id: number | null; away_goalie_id: number | null; home_b2b: boolean; away_b2b: boolean; home_g7: number; away_g7: number; home_out: number[]; away_out: number[] };
 
+/** "Luke Hughes" -> "L. Hughes", so namesakes on one team stay distinct. */
+const shortName = (name: string) => {
+  const parts = name.trim().split(/\s+/);
+  return parts.length > 1 ? `${parts[0][0]}. ${parts.slice(1).join(" ")}` : name;
+};
+
 const delta = (a: number, b: number, digits = 1, scale = 100, unit = " pts") => {
   const d = (a - b) * scale;
   if (Math.abs(d) < 0.05 / (scale === 100 ? 1 : 10)) return "no change";
@@ -155,7 +161,7 @@ export function Lab({ gameId, lab, home, away }: { gameId: number; lab: LabInfo;
                             onClick={() => set(`${side}_out`, on ? s[`${side}_out`].filter((x) => x !== k.pid) : [...s[`${side}_out`], k.pid])}
                             className={`rounded-md border px-2 py-1 text-[0.7rem] transition-colors active:scale-95 disabled:opacity-40 ${on ? "border-bad/60 bg-bad/15 text-ink line-through" : "border-line text-ink-2 hover:border-ice/40 hover:text-ink"}`}
                           >
-                            {k.name.split(" ").slice(-1)[0]} <span className="num text-mute">{k.toi.toFixed(0)}</span>
+                            {shortName(k.name)} <span className="num text-mute">{k.toi.toFixed(0)}</span>
                           </button>
                         );
                       })}
