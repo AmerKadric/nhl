@@ -1,8 +1,9 @@
 import Link from "next/link";
 
-import { finalLabel, fx, onDark, pct, periodLabel, stampET, timeET } from "@/lib/format";
+import { finalLabel, fx, onDark, pct, periodLabel, stampET } from "@/lib/format";
 import type { Game } from "@/lib/types";
 
+import { LocalTime } from "./LocalTime";
 import { Chip, TeamLogo } from "./ui";
 
 const LIVE = new Set(["LIVE", "CRIT"]);
@@ -58,7 +59,9 @@ export function GameCard({ g }: { g: Game }) {
     >
       <span aria-hidden className="absolute inset-y-0 left-0 w-[3px]" style={{ background: `linear-gradient(${onDark(g.away.color)} 0 50%, ${onDark(g.home.color)} 50% 100%)` }} />
       <div className="flex items-center justify-between gap-2 pl-1.5">
-        <span className="num text-xs text-ink-2">{g.result || live ? stampDate(g) : timeET(g.start_time_utc)}</span>
+        <span className="num text-xs text-ink-2">
+          <LocalTime iso={g.start_time_utc} />
+        </span>
         <span className="flex items-center gap-1.5">
           {statusChip(g)}
           {!g.result && !live && !off && goalieChip(g)}
@@ -132,6 +135,7 @@ export function GameCard({ g }: { g: Game }) {
               </div>
             </dl>
           )}
+          {f.headline && !observed && <p className="mt-3 text-xs leading-snug text-ink-2">{f.headline}</p>}
           <div className="mt-3 flex items-center justify-between border-t border-line-soft pt-2.5 text-[0.7rem] text-mute">
             <span className="text-ink-2">{f.confidence_label}</span>
             <span>
@@ -141,13 +145,13 @@ export function GameCard({ g }: { g: Game }) {
         </div>
       ) : (
         <div className="mt-4 rounded-lg border border-dashed border-line px-3 py-2.5 pl-3 text-xs text-ink-2">
-          {off ? "No active forecast: this game is not currently scheduled to be played." : "No forecast was published for this game."}
+          {off
+            ? "No active forecast: this game is not currently scheduled to be played."
+            : observed
+              ? "No forecast was published for this game."
+              : "A forecast is published about a week before the game."}
         </div>
       )}
     </Link>
   );
-}
-
-function stampDate(g: Game) {
-  return timeET(g.start_time_utc);
 }

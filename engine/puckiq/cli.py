@@ -40,6 +40,7 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("train", help="train and activate the production model")
     p = sub.add_parser("daily", help="full daily pipeline")
     p.add_argument("--retrain", action="store_true")
+    p.add_argument("--strict", action="store_true", help="exit non-zero if any step failed, not only when the run aborted")
     sub.add_parser("refresh", help="light refresh: states, goalie confirmations, forecasts, settlement")
     sub.add_parser("settle", help="settle finished forecasts")
     sub.add_parser("status", help="print data freshness")
@@ -88,7 +89,9 @@ def main(argv: list[str] | None = None) -> int:
         from .pipeline.daily import run_daily
         r = run_daily(retrain=True if args.retrain else None)
         print(json.dumps({k: r[k] for k in ("status", "failures", "steps")}, indent=1, default=str))
-        return 0 if r["status"] != "aborted" else 1
+        if r["status"] == "aborted":
+            return 1
+        return 2 if args.strict and r["status"] != "ok" else 0
     elif args.cmd == "refresh":
         from .pipeline.daily import run_refresh
         r = run_refresh()

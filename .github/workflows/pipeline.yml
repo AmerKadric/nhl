@@ -16,7 +16,11 @@ on:
         description: Which job to run
         type: choice
         default: daily
-        options: [daily, refresh, bootstrap]
+        options: [daily, refresh, bootstrap, alert-test]
+
+permissions:
+  contents: read
+  issues: write   # to open an issue when a run fails
 
 concurrency:
   group: pipeline
@@ -77,10 +81,37 @@ jobs:
           puckiq daily --retrain
       - name: Daily
         if: steps.guard.outputs.configured == 'true' && steps.job.outputs.name == 'daily'
-        run: puckiq daily
+        # --strict: a failed step fails the run even if forecasts were still published
+        run: puckiq daily --strict
       - name: Refresh
         if: steps.guard.outputs.configured == 'true' && steps.job.outputs.name == 'refresh'
         run: puckiq refresh
+      - name: Alert test (fails on purpose to exercise the failure alert)
+        if: steps.guard.outputs.configured == 'true' && steps.job.outputs.name == 'alert-test'
+        run: |
+          echo "Deliberate failure to test alerting."
+          exit 1
+      # GitHub emails the repository owner about new issues, so a broken run
+      # is noticed the same day. Daily failures add a comment each time;
+      # refresh failures only open an issue if none is open, so an outage
+      # during the evening does not produce a message every half hour.
+      - name: Open or update an issue when the run fails
+        if: failure() && steps.guard.outputs.configured == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          JOB: ${{ steps.job.outputs.name }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          title="PUCKIQ pipeline run failed"
+          body="The \`$JOB\` job failed at $(date -u +%Y-%m-%dT%H:%MZ). Forecasts and results may be out of date until it is fixed.
+
+          Run log: $RUN_URL"
+          number=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "in:title \"$title\"" --json number --jq '.[0].number // empty')
+          if [ -z "$number" ]; then
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --body "$body"
+          elif [ "$JOB" != "refresh" ]; then
+            gh issue comment "$number" --repo "$GITHUB_REPOSITORY" --body "$body"
+          fi
       - name: Report data freshness
         if: always() && steps.guard.outputs.configured == 'true'
         run: puckiq status >> "$GITHUB_STEP_SUMMARY" || true

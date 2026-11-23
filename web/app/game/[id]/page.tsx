@@ -7,9 +7,10 @@ import { CompareBars, type CompareRow, DriverBars, OutcomeBar } from "@/componen
 import { StaleBanner } from "@/components/Chrome";
 import { DistBars, ScoreMatrix } from "@/components/interactive";
 import { Lab } from "@/components/Lab";
+import { LocalTime } from "@/components/LocalTime";
 import { Chip, PageSkeleton, Section, Stat, TeamLogo, Unavailable } from "@/components/ui";
 import { apiCached } from "@/lib/api";
-import { dayLabel, finalLabel, fx, onDark, pct, periodLabel, recordStr, signed, stampET, timeET } from "@/lib/format";
+import { dayLabel, finalLabel, fx, onDark, pct, periodLabel, recordStr, signed, stampET } from "@/lib/format";
 import type { GameDetail, GoalieMatchup, LineupWatch, TeamBrief } from "@/lib/types";
 
 export const metadata: Metadata = { title: "Matchup intelligence" };
@@ -44,7 +45,9 @@ async function Matchup({ params }: { params: PageProps<"/game/[id]">["params"] }
         <div aria-hidden className="pointer-events-none absolute inset-0" style={{ background: `radial-gradient(520px 260px at 0% 50%, ${onDark(away.color)}22, transparent 70%), radial-gradient(520px 260px at 100% 50%, ${onDark(home.color)}22, transparent 70%)` }} />
         <div className="relative">
           <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1.5 text-xs text-ink-2">
-            <span className="num">{dayLabel(g.date)} · {timeET(g.start_time_utc)}</span>
+            <span className="num">
+              {dayLabel(g.date)} · <LocalTime iso={g.start_time_utc} />
+            </span>
             {g.venue && <span>· {g.venue}</span>}
             {g.game_type === 3 && <Chip tone="ice">Playoffs</Chip>}
             {g.schedule_state !== "OK" && <Chip tone="warn">{g.schedule_state === "PPD" ? "Postponed" : g.schedule_state}</Chip>}
@@ -96,6 +99,7 @@ async function Matchup({ params }: { params: PageProps<"/game/[id]">["params"] }
                 <span className="grow-x rounded-l-full bg-away" style={{ width: `${f.p_away_win * 100}%` }} />
                 <span className="rounded-r-full bg-home" style={{ width: `${f.p_home_win * 100}%` }} />
               </div>
+              {f.headline && <p className="mt-4 text-center text-sm text-ink">{f.headline}</p>}
               <div className="num mt-4 flex flex-wrap justify-center gap-x-6 gap-y-1 text-xs text-ink-2">
                 <span>expected goals <span className="text-ink">{fx(f.exp_away_goals)} – {fx(f.exp_home_goals)}</span></span>
                 <span>expected total <span className="text-ink">{fx(f.expected_total, 1)}</span></span>

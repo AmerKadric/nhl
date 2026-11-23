@@ -153,3 +153,33 @@ def test_walkforward_never_trains_on_test_season(feat, monkeypatch):
     assert seen and max(seen) == 2020
     assert out["summary"]["test_seasons"] == [2021]
     assert set(out["preds"]["xg_lean"]["season"]) == {2021}
+
+
+# --- plain-English summaries ---------------------------------------------------
+def _d(key, effect):
+    return {"key": key, "home_win_prob_effect": effect}
+
+
+def test_headline_names_only_factors_that_matter():
+    from puckiq.explain import headline
+    drivers = [_d("env", 0.2), _d("xga", 0.053), _d("home", 0.036), _d("lineup_toi", 0.022), _d("goalie", 0.001), _d("rest", -0.015)]
+    assert headline(drivers, "NJD", "CBJ", 0.644) == "NJD favoured, mainly on chance quality and home ice. CBJ's best argument is rest and travel."
+    # the same game seen from the other side: the away team is the favourite
+    flipped = [dict(d, home_win_prob_effect=-d["home_win_prob_effect"]) for d in drivers]
+    assert headline(flipped, "CBJ", "NJD", 0.356).startswith("NJD favoured, mainly on chance quality and home ice.")
+    # the league scoring environment is never presented as a matchup factor
+    assert "environment" not in headline(drivers, "NJD", "CBJ", 0.644)
+    # a factor worth under half a point is not mentioned
+    assert "goaltending" not in headline(drivers, "NJD", "CBJ", 0.644)
+
+
+def test_headline_strength_wording_and_edge_cases():
+    from puckiq.explain import headline
+    assert headline([_d("xga", 0.12), _d("home", 0.04)], "CAR", "VAN", 0.78).startswith("CAR strongly favoured")
+    assert headline([_d("home", 0.035), _d("xga", 0.01)], "BOS", "WSH", 0.55) == "Slight edge to BOS, mainly on home ice and chance quality."
+    assert headline([_d("home", 0.03), _d("xga", -0.02)], "TOR", "CBJ", 0.51) == "Close to even. Home ice tilts it slightly toward TOR. CBJ's best argument is chance quality."
+    assert headline([_d("home", 0.001)], "TOR", "CBJ", 0.5) == "Close to even: nothing separates these teams."
+    assert headline([_d("goalie", 0.004)], "DAL", "STL", 0.62) == "DAL favoured."        # favoured, but no single factor is worth naming
+    assert headline(None, "A", "B", 0.6) is None and headline([], "A", "B", 0.6) is None
+    # two groups with the same wording are not repeated
+    assert headline([_d("lineup_toi", 0.03), _d("lineup_gs", 0.02), _d("home", 0.01)], "MIN", "CHI", 0.66) == "MIN favoured, mainly on a healthier lineup and home ice."

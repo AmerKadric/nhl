@@ -18,6 +18,7 @@ export type ForecastCard = {
   expected_total: number;
   p_extra_time: number;
   confidence_label: string;
+  headline?: string | null;
   goalies: { home: GoalieOption[]; away: GoalieOption[] };
   stale_sources: string[];
 };
@@ -97,6 +98,7 @@ export type ForecastDetail = {
   data_freshness: Freshness | null;
   availability: Record<string, string> | null;
   lineup_watch?: { home: LineupWatch; away: LineupWatch } | null;
+  headline?: string | null;
   matrix: { max_goals: number; final: number[][]; regulation: number[][]; overflow: number };
 };
 

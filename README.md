@@ -9,7 +9,7 @@ PUCKIQ forecasts the final score of every NHL game with a statistical model, sho
 - Projects a final score, win probabilities, expected goals and the full exact-score distribution for each game.
 - Models regulation, overtime and shootouts separately, so a final score is never a tie and an OT/SO result always has a one-goal margin.
 - Treats an unconfirmed starting goalie as a probability-weighted mix of the likely starters.
-- Explains each forecast with the model's own factor contributions.
+- Explains each forecast with the model's own factor contributions. A one-sentence summary on each game is assembled from those same numbers by fixed rules, not by a language model.
 - Lets you re-run a matchup in the Prediction Lab with a different goalie or schedule situation.
 - Publishes forecasts as append-only versions and scores every one automatically after the game.
 - Simulates the rest of the season every day for projected standings, playoff odds and Stanley Cup odds.
@@ -77,7 +77,7 @@ NHL APIs + MoneyPuck files
 | `engine/puckiq/backtest` | Walk-forward backtest and metrics |
 | `engine/puckiq/pipeline` | Daily and refresh jobs, publishing, settlement |
 | `engine/puckiq/api` | HTTP API, including the scenario lab |
-| `engine/tests` | 68 tests: simulator rules, look-ahead leakage, lineups, season simulation, settlement, API |
+| `engine/tests` | 70 tests: simulator rules, look-ahead leakage, lineups, season simulation, summaries, settlement, API |
 | `web/` | Next.js 16 front end |
 | `artifacts/` | Tuned rating parameters and the backtest report |
 
@@ -128,6 +128,7 @@ Every job is idempotent. A failure in a critical feed aborts publishing; a stale
 - Both Vercel projects are connected to this repository: a push to `main` redeploys them.
 - The site reads `PUCKIQ_API_URL`; the API reads `DATABASE_URL` and `PUCKIQ_CORS_ORIGINS`. All are set in Vercel.
 - The pipeline reads the `DATABASE_URL` repository secret. Without it every run exits early.
+- When a pipeline run fails, the workflow opens an issue titled "PUCKIQ pipeline run failed" (or comments on the open one), so GitHub emails the repository owner. The daily job also fails if any single step failed, even when forecasts were still published.
 - Neon's free plan allows 5 GB of data transfer a month and suspends the database beyond that. To stay far below it, the pipeline caches completed seasons between runs, refresh runs skip the heavy work unless a game is about to start, the API serves precomputed summaries, and the site caches API reads for 20 seconds to a few minutes.
 - The API installs only the runtime dependencies. Tuning, backtesting, training and the pipeline need `engine[train]`.
 - To run a command against the hosted database from a workstation, set `DATABASE_URL` for that process (for example from `vercel env pull`) and never commit it.

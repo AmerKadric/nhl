@@ -161,6 +161,7 @@ def game(game_id: int):
            "rating_ranges": q.league_rating_ranges(g["season"]), "goalie_matchup": None, "lab": None}
     if detail:
         out.update(forecast=detail["forecast"], versions=detail["versions"], evaluation=detail["evaluation"])
+        out["forecast"]["headline"] = (card["forecast"] or {}).get("headline")
         gm = {}
         for side in ("home", "away"):
             gm[side] = [{**go, **gs.get(go["pid"], {})} for go in detail["forecast"]["goalies"][side]]

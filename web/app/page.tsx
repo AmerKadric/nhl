@@ -4,6 +4,7 @@ import { Suspense } from "react";
 
 import { StaleBanner } from "@/components/Chrome";
 import { GamesBoard } from "@/components/GamesBoard";
+import { Recap } from "@/components/Recap";
 import { PageSkeleton, Unavailable } from "@/components/ui";
 import { apiCached } from "@/lib/api";
 import { addDays, dayLabel, isDate, todayET } from "@/lib/format";
@@ -85,7 +86,21 @@ async function Slate({ searchParams }: { searchParams: PageProps<"/">["searchPar
 
   const data = await apiCached<GamesResponse>(`/v1/games?start=${start}&end=${end}`, "live");
   let games = data?.games ?? [];
-  if (view === "completed") games = games.filter((g) => g.result).reverse();
+  // Past games PUCKIQ never forecast (before launch) are left out of the
+  // browsing views; they are in the backtest history on the Accuracy page.
+  const total = games.length;
+  if (view === "completed") games = games.filter((g) => g.result && g.forecast).reverse();
+  else if (view === "all") games = games.filter((g) => !g.result || g.forecast);
+  const hidden = view === "completed" ? data?.games.filter((g) => g.result && !g.forecast).length ?? 0 : total - games.length;
+
+  // The most recent slate that has settled forecasts, for the recap.
+  let recap: { date: string; games: GamesResponse["games"] } | null = null;
+  if (view === "today") {
+    const past = await apiCached<GamesResponse>(`/v1/games?start=${addDays(today, -5)}&end=${addDays(today, -1)}`);
+    const settled = (past?.games ?? []).filter((g) => g.result && g.forecast && g.evaluation);
+    const last = settled.map((g) => g.date).sort().pop();
+    if (last) recap = { date: last, games: settled.filter((g) => g.date === last) };
+  }
 
   // On an off day, point at the next slate instead of leaving the page empty.
   let next: GamesResponse | null = null;
@@ -145,6 +160,16 @@ async function Slate({ searchParams }: { searchParams: PageProps<"/">["searchPar
         </Unavailable>
       )}
 
+      {hidden > 0 && (view === "completed" || view === "all") && (
+        <p className="mt-2 text-xs text-mute">
+          {hidden} earlier {hidden === 1 ? "game is" : "games are"} not shown because PUCKIQ had not started publishing forecasts.{" "}
+          <Link href="/accuracy?source=backtest#history" className="text-ice hover:underline">
+            See the backtest history
+          </Link>
+          .
+        </p>
+      )}
+
       {next && nextDate && (
         <div className="mt-8">
           <h2 className="mb-3 flex items-baseline gap-3">
@@ -155,6 +180,8 @@ async function Slate({ searchParams }: { searchParams: PageProps<"/">["searchPar
           <GamesBoard initial={next.games} start={nextDate} end={nextDate} today={today} />
         </div>
       )}
+      {recap && <Recap date={recap.date} games={recap.games} />}
+      <p className="mt-8 text-xs text-mute">Slates are grouped by US Eastern date; puck-drop times are shown in your local time zone.</p>
     </div>
   );
 }

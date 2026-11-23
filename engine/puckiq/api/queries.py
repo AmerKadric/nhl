@@ -14,6 +14,7 @@ import pandas as pd
 import sqlalchemy as sa
 
 from .. import config, db
+from ..explain import headline
 from ..pipeline.daily import current_season, freshness
 
 LOGO = "https://assets.nhle.com/logos/nhl/svg/{abbrev}_dark.svg"
@@ -110,7 +111,7 @@ def meta() -> dict:
 
 
 # --- games ------------------------------------------------------------------
-def _forecast_card(f: dict | None, mv: dict[int, str]) -> dict | None:
+def _forecast_card(f: dict | None, mv: dict[int, str], home: str = "", away: str = "") -> dict | None:
     if f is None:
         return None
     s = _j(f["summary"])
@@ -122,6 +123,7 @@ def _forecast_card(f: dict | None, mv: dict[int, str]) -> dict | None:
         "ml_home_goals": f["ml_home_goals"], "ml_away_goals": f["ml_away_goals"], "ml_score_prob": f["ml_score_prob"],
         "expected_total": s["expected_total"], "p_extra_time": f["p_overtime"] + f["p_shootout"],
         "confidence_label": s["confidence"]["label"],
+        "headline": headline(s.get("drivers"), home, away, f["p_home_win"]) if home else None,
         "goalies": {side: [{"pid": g["pid"], "name": g["name"], "prob": g["prob"], "status": g["status"]} for g in s["goalies"][side]]
                     for side in ("home", "away")},
         "stale_sources": (s.get("data_freshness") or {}).get("stale", []),
@@ -136,7 +138,7 @@ def _game_card(g: dict, f: dict | None, ev: dict | None, mv: dict[int, str]) -> 
         "home": _team_brief(g["home_team_id"]), "away": _team_brief(g["away_team_id"]),
         "result": {"home_score": g["home_score"], "away_score": g["away_score"], "last_period_type": g["last_period_type"]} if final else None,
         "live": None,
-        "forecast": _forecast_card(f, mv),
+        "forecast": _forecast_card(f, mv, teams_map()[g["home_team_id"]]["abbrev"], teams_map()[g["away_team_id"]]["abbrev"]),
         "evaluation": ev and {"winner_correct": bool(ev["winner_correct"]), "exact_score_hit": bool(ev["exact_score_hit"]),
                               "p_actual_score": ev["p_actual_score"], "log_loss": ev["log_loss"]},
     }
