@@ -13,6 +13,9 @@ ARTIFACT_DIR = Path(os.environ.get("PUCKIQ_ARTIFACT_DIR", REPO_ROOT / "artifacts
 
 DATABASE_URL = os.environ.get("DATABASE_URL", f"sqlite:///{(DATA_DIR / 'puckiq.db').as_posix()}")
 
+# True on serverless hosts (read-only filesystem, many short-lived instances).
+SERVERLESS = bool(os.environ.get("VERCEL") or os.environ.get("PUCKIQ_SERVERLESS"))
+
 # Identifies us honestly to the data providers. No personal details.
 USER_AGENT = os.environ.get("PUCKIQ_USER_AGENT", "PUCKIQ/0.1 (non-commercial hockey research)")
 

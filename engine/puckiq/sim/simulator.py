@@ -18,12 +18,29 @@ over uncertain starting goalies and uncertainty in the scoring rates, which
 has no closed form."""
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 
 import numpy as np
-from scipy import stats
 
 from .. import config
+
+# Probability mass functions are implemented with numpy only, so serving
+# forecasts does not need scipy (which is used only when fitting).
+_KBIG = 40
+_LOG_FACT = np.array([math.lgamma(k + 1) for k in range(_KBIG + 1)])
+
+
+def log_pmf(lam, kmax: int, dispersion: float = 0.0) -> np.ndarray:
+    """log P(K = k) for k = 0..kmax, shape lam.shape + (kmax + 1,).
+    Poisson, or negative binomial (NB2, variance = mean + dispersion * mean^2)."""
+    lam = np.asarray(lam, float)[..., None]
+    k = np.arange(kmax + 1)
+    if dispersion > 1e-9:
+        r = 1.0 / dispersion
+        coef = np.array([math.lgamma(i + r) for i in range(kmax + 1)]) - math.lgamma(r) - _LOG_FACT[:kmax + 1]
+        return coef + r * np.log(r / (r + lam)) + k * np.log(lam / (r + lam))
+    return k * np.log(lam) - lam - _LOG_FACT[:kmax + 1]
 
 
 @dataclass
@@ -40,11 +57,7 @@ class SimParams:
 
 
 def _pmf(lam: float, n: int, dispersion: float) -> np.ndarray:
-    k = np.arange(n + 1)
-    if dispersion > 1e-9:
-        r = 1.0 / dispersion
-        return stats.nbinom.pmf(k, r, r / (r + lam))
-    return stats.poisson.pmf(k, lam)
+    return np.exp(log_pmf(lam, n, dispersion))
 
 
 def regulation_matrix(lam_home: float, lam_away: float, sp: SimParams, max_goals: int = config.MAX_GOALS) -> np.ndarray:
@@ -53,8 +66,7 @@ def regulation_matrix(lam_home: float, lam_away: float, sp: SimParams, max_goals
     ph, pa = _pmf(lam_home, max_goals, sp.dispersion), _pmf(lam_away, max_goals, sp.dispersion)
     m = np.outer(ph, pa)
     # Tail-inclusive normalising constant for the draw re-weighting.
-    big = 40
-    fh, fa = _pmf(lam_home, big, sp.dispersion), _pmf(lam_away, big, sp.dispersion)
+    fh, fa = _pmf(lam_home, _KBIG, sp.dispersion), _pmf(lam_away, _KBIG, sp.dispersion)
     p_tie = float(np.sum(fh * fa))
     z = 1.0 + (sp.theta - 1.0) * p_tie
     m = m / z
@@ -172,16 +184,8 @@ def batch_matrices(lam_h: np.ndarray, lam_a: np.ndarray, sp: SimParams, playoff:
     lam_h, lam_a = np.asarray(lam_h, float), np.asarray(lam_a, float)
     playoff = np.asarray(playoff, bool)
     n = max_goals + 1
-    k, kb = np.arange(n), np.arange(41)
-    if sp.dispersion > 1e-9:
-        r = 1.0 / sp.dispersion
-        ph = stats.nbinom.pmf(k[None, :], r, (r / (r + lam_h))[:, None])
-        pa = stats.nbinom.pmf(k[None, :], r, (r / (r + lam_a))[:, None])
-        fh = stats.nbinom.pmf(kb[None, :], r, (r / (r + lam_h))[:, None])
-        fa = stats.nbinom.pmf(kb[None, :], r, (r / (r + lam_a))[:, None])
-    else:
-        ph, pa = stats.poisson.pmf(k[None, :], lam_h[:, None]), stats.poisson.pmf(k[None, :], lam_a[:, None])
-        fh, fa = stats.poisson.pmf(kb[None, :], lam_h[:, None]), stats.poisson.pmf(kb[None, :], lam_a[:, None])
+    ph, pa = np.exp(log_pmf(lam_h, max_goals, sp.dispersion)), np.exp(log_pmf(lam_a, max_goals, sp.dispersion))
+    fh, fa = np.exp(log_pmf(lam_h, _KBIG, sp.dispersion)), np.exp(log_pmf(lam_a, _KBIG, sp.dispersion))
     z = 1.0 + (sp.theta - 1.0) * (fh * fa).sum(axis=1)
     reg = ph[:, :, None] * pa[:, None, :] / z[:, None, None]
     idx = np.arange(n)
@@ -294,18 +298,13 @@ def fit_sim_params(lam_h: np.ndarray, lam_a: np.ndarray, reg_h: np.ndarray, reg_
     lam_h, lam_a = np.asarray(lam_h, float), np.asarray(lam_a, float)
     reg_h, reg_a = np.asarray(reg_h, int), np.asarray(reg_a, int)
 
+    rows = np.arange(len(lam_h))
+    kh, ka = np.minimum(reg_h, _KBIG), np.minimum(reg_a, _KBIG)
+
     def nll(theta: float, alpha: float) -> float:
-        if alpha > 1e-9:
-            r = 1.0 / alpha
-            lh = stats.nbinom.logpmf(reg_h, r, r / (r + lam_h))
-            la = stats.nbinom.logpmf(reg_a, r, r / (r + lam_a))
-            k = np.arange(40)[:, None]
-            p_tie = (stats.nbinom.pmf(k, r, r / (r + lam_h)) * stats.nbinom.pmf(k, r, r / (r + lam_a))).sum(axis=0)
-        else:
-            lh, la = stats.poisson.logpmf(reg_h, lam_h), stats.poisson.logpmf(reg_a, lam_a)
-            k = np.arange(40)[:, None]
-            p_tie = (stats.poisson.pmf(k, lam_h) * stats.poisson.pmf(k, lam_a)).sum(axis=0)
-        ll = lh + la + np.where(reg_h == reg_a, np.log(theta), 0.0) - np.log(1.0 + (theta - 1.0) * p_tie)
+        th_, ta_ = log_pmf(lam_h, _KBIG, alpha), log_pmf(lam_a, _KBIG, alpha)
+        p_tie = np.exp(th_ + ta_).sum(axis=1)
+        ll = th_[rows, kh] + ta_[rows, ka] + np.where(reg_h == reg_a, np.log(theta), 0.0) - np.log(1.0 + (theta - 1.0) * p_tie)
         return -float(ll.sum())
 
     th = minimize_scalar(lambda t: nll(t, 0.0), bounds=(0.8, 2.5), method="bounded").x

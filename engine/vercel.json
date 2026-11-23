@@ -1,0 +1,9 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "functions": {
+    "puckiq/api/main.py": {
+      "maxDuration": 30,
+      "excludeFiles": "{tests/**,Dockerfile,**/__pycache__/**}"
+    }
+  }
+}

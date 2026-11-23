@@ -9,7 +9,6 @@ from dataclasses import dataclass, field
 
 import numpy as np
 import pandas as pd
-import statsmodels.api as sm
 
 from .design import GBM_EXTRA, GROUPS, columns_for
 
@@ -24,6 +23,7 @@ class GLMRateModel:
     n_train: int = 0
 
     def fit(self, rows: pd.DataFrame) -> "GLMRateModel":
+        import statsmodels.api as sm   # fitting only; not needed to serve forecasts
         self.cols = columns_for(self.groups)
         d = rows.dropna(subset=["y"] + self.cols)
         X = np.column_stack([np.ones(len(d)), d[self.cols].to_numpy(float)])

@@ -86,6 +86,18 @@ def train(feat=None, backtest_summary: dict | None = None) -> Forecaster:
     return fc
 
 
+def seed_backtest_report() -> int:
+    """Copy the committed backtest report into the database if it is absent,
+    so hosts without the repository files can serve the Accuracy page."""
+    if db.get_document("backtest_summary") is not None:
+        return 0
+    p = config.ARTIFACT_DIR / "backtest" / "summary.json"
+    if not p.exists():
+        return 0
+    db.put_document("backtest_summary", json.loads(p.read_text()))
+    return 1
+
+
 def _step(report: dict, name: str, fn, critical: bool = False):
     t = time.time()
     try:
@@ -108,6 +120,7 @@ def run_daily(retrain: bool | None = None, days_ahead: int = 7) -> dict:
     today = dt.datetime.now(ET).date()
     try:
         _step(report, "reference", lambda: (nhl.seed_reference(), nhl.ingest_teams())[1], critical=True)
+        _step(report, "backtest_report", seed_backtest_report)
         _step(report, "games", lambda: nhl.ingest_games([season]), critical=True)
         _step(report, "schedule", lambda: nhl.sync_schedule(today - dt.timedelta(days=3), weeks=3), critical=True)
         _step(report, "goalie_logs", lambda: nhl.ingest_goalie_logs([season], since=today - dt.timedelta(days=14)))

@@ -294,7 +294,11 @@ def snapshot_for(game_id: int) -> dict | None:
 
 # --- accuracy ----------------------------------------------------------------
 def backtest_summary() -> dict | None:
+    """The backtest report: from the database, else the committed file."""
     def load():
+        doc = db.get_document("backtest_summary")
+        if doc:
+            return doc
         p = config.ARTIFACT_DIR / "backtest" / "summary.json"
         return json.loads(p.read_text()) if p.exists() else None
     return cached("backtest", 300, load)

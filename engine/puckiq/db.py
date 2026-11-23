@@ -308,27 +308,45 @@ team_ratings = Table(
     Index("ix_team_ratings_season", "team_id", "season"),
 )
 
+# Small JSON documents that every runner and host must be able to read, such
+# as the backtest report shown on the Accuracy page.
+documents = Table(
+    "documents", metadata,
+    Column("key", String(60), primary_key=True),
+    Column("updated_at", DateTime, nullable=False),
+    Column("payload", JSON, nullable=False),
+)
+
 _engine: sa.Engine | None = None
 
 
 def engine() -> sa.Engine:
     global _engine
     if _engine is None:
-        config.ensure_dirs()
         url = config.DATABASE_URL
         if url.startswith("postgres://"):
             url = "postgresql+psycopg://" + url[len("postgres://"):]
         elif url.startswith("postgresql://"):
             url = "postgresql+psycopg://" + url[len("postgresql://"):]
-        kwargs = {"connect_args": {"timeout": 60}} if url.startswith("sqlite") else {"pool_pre_ping": True}
-        _engine = sa.create_engine(url, future=True, **kwargs)
         if url.startswith("sqlite"):
+            config.ensure_dirs()
+            _engine = sa.create_engine(url, future=True, connect_args={"timeout": 60})
+
             @sa.event.listens_for(_engine, "connect")
             def _pragmas(dbapi_conn, _):  # pragma: no cover - driver hook
                 cur = dbapi_conn.cursor()
                 cur.execute("PRAGMA journal_mode=WAL")
                 cur.execute("PRAGMA foreign_keys=ON")
                 cur.close()
+        else:
+            # prepare_threshold=None keeps psycopg compatible with pooled
+            # (PgBouncer) connection strings. On serverless hosts an instance
+            # holds no idle connections of its own.
+            kwargs: dict = {"connect_args": {"prepare_threshold": None}, "pool_pre_ping": True}
+            if config.SERVERLESS:
+                from sqlalchemy.pool import NullPool
+                kwargs["poolclass"] = NullPool
+            _engine = sa.create_engine(url, future=True, **kwargs)
     return _engine
 
 
@@ -429,3 +447,52 @@ def last_success(conn, source_key: str) -> dt.datetime | None:
         sa.select(sa.func.max(ingestion_runs.c.finished_at))
         .where(ingestion_runs.c.source_key == source_key, ingestion_runs.c.status == "ok")
     ).scalar()
+
+
+def put_document(key: str, payload: dict) -> None:
+    with begin() as c:
+        upsert(c, documents, [{"key": key, "updated_at": utcnow(), "payload": payload}])
+
+
+def get_document(key: str) -> dict | None:
+    import json
+    with begin() as c:
+        row = c.execute(sa.select(documents.c.payload).where(documents.c.key == key)).first()
+    if not row:
+        return None
+    return json.loads(row[0]) if isinstance(row[0], str) else row[0]
+
+
+def copy_from(source_url: str, chunk: int = 2000) -> dict[str, int]:
+    """Copy every table from another database into this one (for example a
+    local SQLite file into production PostgreSQL), keeping primary keys so
+    forecast history and its evaluations stay linked. Idempotent: rows are
+    upserted on their primary key."""
+    src = sa.create_engine(source_url, future=True)
+    create_all()
+    counts: dict[str, int] = {}
+    with src.connect() as sc:
+        for table in metadata.sorted_tables:   # parents before children
+            if not sa.inspect(src).has_table(table.name):
+                continue
+            n = 0
+            result = sc.execute(sa.select(table)).mappings()
+            while True:
+                rows = [dict(r) for r in result.fetchmany(chunk)]
+                if not rows:
+                    break
+                with begin() as c:
+                    upsert(c, table, rows)
+                n += len(rows)
+            counts[table.name] = n
+    # serial counters must continue after the copied ids
+    if engine().dialect.name == "postgresql":
+        with begin() as c:
+            for table in metadata.sorted_tables:
+                pk = list(table.primary_key.columns)
+                if len(pk) == 1 and pk[0].autoincrement is True and isinstance(pk[0].type, Integer):
+                    c.execute(sa.text(
+                        f"SELECT setval(pg_get_serial_sequence('{table.name}', '{pk[0].name}'), "
+                        f"COALESCE((SELECT MAX({pk[0].name}) FROM {table.name}), 1))"))
+    src.dispose()
+    return counts

@@ -63,11 +63,11 @@ NHL APIs + MoneyPuck files
 
 ## Run it locally
 
-Requires Python 3.11+ and Node 20+.
+Requires Python 3.12+ and Node 20+.
 
 ```bash
 python -m venv .venv
-.venv/Scripts/python -m pip install -e "engine[dev]"     # macOS/Linux: .venv/bin/python
+.venv/Scripts/python -m pip install -e "engine[train,dev]"   # macOS/Linux: .venv/bin/python
 
 # one-off: load history (about 3 minutes, ~350 MB of downloads), then backtest and publish
 .venv/Scripts/puckiq ingest-history

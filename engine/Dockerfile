@@ -7,7 +7,7 @@ ENV PYTHONUNBUFFERED=1 \
     PUCKIQ_LOG_JSON=1
 WORKDIR /app
 COPY engine/ engine/
-RUN pip install --no-cache-dir "./engine[postgres]"
+RUN pip install --no-cache-dir ./engine
 # Tuned rating parameters and the backtest report the Accuracy page serves.
 COPY artifacts/ artifacts/
 RUN useradd --create-home puckiq && mkdir -p /app/data && chown -R puckiq /app

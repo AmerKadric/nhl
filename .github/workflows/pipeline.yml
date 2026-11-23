@@ -6,7 +6,10 @@ name: pipeline
 on:
   schedule:
     - cron: "0 13 * * *"               # full daily run, after MoneyPuck's overnight update
-    - cron: "*/20 16-23,0-6 * * *"     # light refresh through the game window (UTC)
+    # Light refresh every 30 minutes through the evening game window (UTC):
+    # picks up confirmed goalies and settles finished games. Kept to this
+    # window so a private repository stays inside the free Actions minutes.
+    - cron: "*/30 22-23,0-4 * * *"
   workflow_dispatch:
     inputs:
       job:
@@ -51,7 +54,7 @@ jobs:
           path: data/raw
           key: raw-${{ github.run_id }}
           restore-keys: raw-
-      - run: pip install -e "engine[postgres]"
+      - run: pip install -e "engine[train]"
         if: steps.guard.outputs.configured == 'true'
       - name: Choose job
         if: steps.guard.outputs.configured == 'true'

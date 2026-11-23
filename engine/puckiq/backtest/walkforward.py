@@ -322,7 +322,9 @@ def _json_default(o):
 def save(preds: dict[str, pd.DataFrame], summary: dict) -> None:
     out = config.ARTIFACT_DIR / "backtest"
     out.mkdir(parents=True, exist_ok=True)
-    (out / "summary.json").write_text(json.dumps(summary, indent=1, default=_json_default))
+    text = json.dumps(summary, indent=1, default=_json_default)
+    (out / "summary.json").write_text(text)
+    db.put_document("backtest_summary", json.loads(text))
     keep = ["baseline_home", "elo_goals", "scoring_avg", "xg_lean", "xg_lean_proj"]
     if summary["chosen_model"] not in keep:
         keep.append(summary["chosen_model"])
