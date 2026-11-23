@@ -24,7 +24,7 @@ def make_frames(n_days: int = 80, seed: int = 3, seasons=(2020, 2021)) -> Frames
     two seasons so that season roll-over logic is exercised."""
     rng = np.random.default_rng(seed)
     strength = {tid: rng.normal(0, 0.25) for tid, _ in TEAMS}
-    games, tgs, ggs = [], [], []
+    games, tgs, ggs, sgs = [], [], [], []
     gid = 0
     for season in seasons:
         day0 = dt.date(season, 10, 10)
@@ -64,10 +64,20 @@ def make_frames(n_days: int = 80, seed: int = 3, seasons=(2020, 2021)) -> Frames
                     pid = tid * 100 + (1 if rng.random() < 0.7 else 2)
                     ggs.append(dict(game_id=game_id, player_id=pid, team_id=tid, started=True, toi=3600.0, shots_against=30,
                                     goals_against=int(ga), xga=float(xag), ga_on_xg=float(ga), attempts=45))
+                    # 20 rostered skaters per team, 18 dress; the two scratches rotate
+                    roster = [tid * 1000 + i for i in range(20)]
+                    out = set(rng.choice(20, size=2, replace=False))
+                    for i, sk in enumerate(roster):
+                        if i in out:
+                            continue
+                        sgs.append(dict(game_id=game_id, player_id=sk, team_id=tid, position="D" if i >= 14 else "C",
+                                        toi=float(600 + 60 * (i % 12)), goals=int(rng.random() < 0.08), assists=int(rng.random() < 0.15),
+                                        shots=int(rng.integers(0, 4)), plus_minus=int(rng.integers(-1, 2)), pim=0, pp_points=0))
     teams = pd.DataFrame([dict(id=t, abbrev=a, name=a, franchise_key=t, conference=None, division=None, color="#000000",
                                timezone="America/New_York", lat=0.0, lon=0.0, active=True) for t, a in TEAMS])
     players = pd.DataFrame([dict(id=t * 100 + i, full_name=f"Goalie {a}{i}", position="G") for t, a in TEAMS for i in (1, 2)])
-    return Frames(pd.DataFrame(games), pd.DataFrame(tgs), pd.DataFrame(ggs), teams, players)
+    skaters = pd.DataFrame([dict(id=t * 1000 + i, full_name=f"Skater {a}{i}", position="D" if i >= 14 else "C") for t, a in TEAMS for i in range(20)])
+    return Frames(pd.DataFrame(games), pd.DataFrame(tgs), pd.DataFrame(ggs), teams, pd.concat([players, skaters], ignore_index=True), pd.DataFrame(sgs))
 
 
 @pytest.fixture(scope="session")

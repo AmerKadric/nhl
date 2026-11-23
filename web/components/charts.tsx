@@ -51,6 +51,10 @@ function driverDetail(d: Driver, home: TeamBrief, away: TeamBrief): string {
       return `Goals saved above expected per expected goal (shrunk toward average). ${home.abbrev} goalie ${s((i["away:o_gk"] ?? 0) * 100, 1)}%, ${away.abbrev} goalie ${s((i["o_gk"] ?? 0) * 100, 1)}%.`;
     case "rest":
       return `${home.abbrev}: ${i["t_b2b"] ? "second night of a back-to-back" : "not on a back-to-back"}, ${fx(i["t_g7"], 0)} games in the last 7 days. ${away.abbrev}: ${i["o_b2b"] ? "second night of a back-to-back" : "not on a back-to-back"}, ${fx(i["o_g7"], 0)} games in the last 7 days, ${fx((i["away:t_travel"] ?? 0) * 1000, 0)} km travelled.`;
+    case "lineup_toi":
+      return `Ice time of the lineup each team last dressed, against its usual lineup (minutes per game; negative means regulars were missing). ${home.abbrev} ${s(i["t_lu_toi"], 1)}, ${away.abbrev} ${s(i["o_lu_toi"], 1)}.`;
+    case "lineup_gs":
+      return `Game-score value of the lineup each team last dressed, against its usual lineup (negative means regulars were missing). ${home.abbrev} ${s(i["t_lu_gs"])}, ${away.abbrev} ${s(i["o_lu_gs"])}.`;
     default:
       return "";
   }

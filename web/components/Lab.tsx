@@ -8,7 +8,7 @@ import type { LabInfo, LabResponse, TeamBrief } from "@/lib/types";
 import { ScoreMatrix } from "./interactive";
 
 type Side = "home" | "away";
-type State = { home_goalie_id: number | null; away_goalie_id: number | null; home_b2b: boolean; away_b2b: boolean; home_g7: number; away_g7: number };
+type State = { home_goalie_id: number | null; away_goalie_id: number | null; home_b2b: boolean; away_b2b: boolean; home_g7: number; away_g7: number; home_out: number[]; away_out: number[] };
 
 const delta = (a: number, b: number, digits = 1, scale = 100, unit = " pts") => {
   const d = (a - b) * scale;
@@ -24,6 +24,7 @@ export function Lab({ gameId, lab, home, away }: { gameId: number; lab: LabInfo;
     home_goalie_id: null, away_goalie_id: null,
     home_b2b: lab.current.home_b2b, away_b2b: lab.current.away_b2b,
     home_g7: lab.current.home_g7, away_g7: lab.current.away_g7,
+    home_out: [], away_out: [],
   };
   const [s, setS] = useState<State>(base);
   const [res, setRes] = useState<LabResponse | null>(null);
@@ -35,12 +36,13 @@ export function Lab({ gameId, lab, home, away }: { gameId: number; lab: LabInfo;
 
   const run = async (st: State) => {
     const id = ++seq.current;
-    const body: Record<string, number | boolean> = {};
+    const body: Record<string, number | boolean | number[]> = {};
     if (st.home_goalie_id != null) body.home_goalie_id = st.home_goalie_id;
     if (st.away_goalie_id != null) body.away_goalie_id = st.away_goalie_id;
     for (const side of ["home", "away"] as Side[]) {
       if (st[`${side}_b2b`] !== lab.current[`${side}_b2b`]) body[`${side}_b2b`] = st[`${side}_b2b`];
       if (st[`${side}_g7`] !== lab.current[`${side}_g7`]) body[`${side}_g7`] = st[`${side}_g7`];
+      if (st[`${side}_out`].length) body[`${side}_out`] = st[`${side}_out`];
     }
     try {
       const r = await fetch(`/api/puckiq/v1/games/${gameId}/lab`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
@@ -133,6 +135,36 @@ export function Lab({ gameId, lab, home, away }: { gameId: number; lab: LabInfo;
                     className="mt-2 w-full accent-[var(--color-ice)]"
                   />
                 </div>
+                {lab.skaters && lab.skaters[side].length > 0 && (
+                  <div>
+                    <div className="flex items-center justify-between text-xs text-ink-2">
+                      <span id={`${side}-out`}>Skaters out</span>
+                      <span className="num text-mute">{s[`${side}_out`].length} of 3</span>
+                    </div>
+                    <div role="group" aria-labelledby={`${side}-out`} className="mt-2 flex flex-wrap gap-1.5">
+                      {lab.skaters[side].map((k) => {
+                        const on = s[`${side}_out`].includes(k.pid);
+                        const full = !on && s[`${side}_out`].length >= 3;
+                        return (
+                          <button
+                            key={k.pid}
+                            type="button"
+                            aria-pressed={on}
+                            disabled={full}
+                            title={`${k.name}: ${k.toi.toFixed(1)} minutes per game`}
+                            onClick={() => set(`${side}_out`, on ? s[`${side}_out`].filter((x) => x !== k.pid) : [...s[`${side}_out`], k.pid])}
+                            className={`rounded-md border px-2 py-1 text-[0.7rem] transition-colors active:scale-95 disabled:opacity-40 ${on ? "border-bad/60 bg-bad/15 text-ink line-through" : "border-line text-ink-2 hover:border-ice/40 hover:text-ink"}`}
+                          >
+                            {k.name.split(" ").slice(-1)[0]} <span className="num text-mute">{k.toi.toFixed(0)}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <p className="mt-1.5 text-[0.65rem] leading-snug text-mute">
+                      From the last lineup dressed; the number is minutes per game. A skater marked out is replaced by a league-average unknown.
+                    </p>
+                  </div>
+                )}
               </fieldset>
             ))}
           </div>
@@ -141,7 +173,7 @@ export function Lab({ gameId, lab, home, away }: { gameId: number; lab: LabInfo;
             <ul className="space-y-2">
               {lab.unsupported.map((u) => (
                 <li key={u.control} className="hatch rounded-lg border border-dashed border-line px-3 py-2 text-xs text-ink-2">
-                  <span className="font-semibold text-ink">{u.control === "player_unavailable" ? "Key skater unavailable" : "Extra days of rest"}</span>
+                  <span className="font-semibold text-ink">{u.control === "player_unavailable" ? "Key skater unavailable" : u.control === "goalie_injury_or_form" ? "Goalie form or injury" : "Extra days of rest"}</span>
                   <span className="mt-0.5 block text-mute">{u.reason}</span>
                 </li>
               ))}

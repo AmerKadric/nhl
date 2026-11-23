@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { connection } from "next/server";
 import { Suspense } from "react";
 
 import { Chip, PageSkeleton, Section, Unavailable } from "@/components/ui";
-import { api } from "@/lib/api";
+import { apiCached } from "@/lib/api";
 import { pct, seasonLabel } from "@/lib/format";
 import type { Accuracy, Meta } from "@/lib/types";
 
@@ -24,7 +25,8 @@ export default function Page() {
             ["Rate every team.", "After each game, each team's offence and defence ratings are updated with a Kalman filter: a statistical method that moves a rating toward new evidence in proportion to how uncertain the rating is. Three pairs are tracked: expected goals (shot quality) in all situations, regulation goals, and an Elo rating from results. Ratings are adjusted for the opponent and for home ice, and partly reset toward average each off-season."],
             ["Rate the goalies.", "Each goalie's goals saved above expected is tracked per shot quality faced, weighted toward recent games and shrunk toward league average, so a hot month from a backup is not mistaken for elite talent."],
             ["Project who starts.", "Until the NHL lists a starter, the model estimates each goalie's chance of starting from recent usage and whether the team played yesterday. The forecast then averages over those possibilities instead of assuming one."],
-            ["Turn ratings into scoring rates.", "A Poisson regression converts the two teams' ratings, the opposing goalie, home ice, back-to-backs and recent workload into an expected regulation scoring rate for each team."],
+            ["Check who is dressing.", "Team ratings are averages over many games, so they cannot see that a top defenceman has been out for a week. The model compares the lineup each team last dressed with the lineup it usually dresses, weighting each skater by the ice time his coach gives him. A regular who sat out counts against his team from his first missed game."],
+            ["Turn ratings into scoring rates.", "A Poisson regression converts the two teams' ratings, lineup availability, the opposing goalie, home ice, back-to-backs and recent workload into an expected regulation scoring rate for each team."],
             ["Simulate the game by the rules.", "Each of 20,000 simulations draws the goalies, the scoring rates and a regulation score. Level games are more common than independent scoring implies, so a fitted draw-inflation factor corrects for that. A tie goes to overtime or a shootout, and the winner gets exactly one more goal, so a final score can never be level."],
             ["Publish, then keep score.", "Forecasts are stored with a timestamp and never edited. New information creates a new version. When the game ends, every version is scored automatically and the result is shown on the Accuracy page, good or bad."],
           ].map(([h, body], i) => (
@@ -46,7 +48,7 @@ export default function Page() {
         <ul className="space-y-2 text-sm leading-relaxed text-ink-2">
           {[
             ["Exact scores are mostly luck.", "Hockey is low scoring and random. The single most likely final score is right about one game in thirteen; the value is in the full distribution, not the headline number."],
-            ["No injuries or lineups.", "There is no free, licensed injury feed, so a missing star skater is invisible to the model until it shows up in results. Injury and lineup information is marked unavailable everywhere rather than guessed."],
+            ["No injury reports or game-day lineups.", "There is no free, licensed injury feed. The model only knows who dressed in each team's last game, so a new absence is invisible until the first game missed, and it never knows why a player sat or whether he returns tonight. In testing, confirmed game-day lineups would have helped a little more."],
             ["Goalie news arrives late.", "Starters are confirmed shortly before puck drop. In the backtest, knowing the confirmed starter did not measurably improve accuracy over the projection, but individual games can still move."],
             ["No in-game probabilities.", "Live scores are shown as observed facts. There is no validated in-game model, so no live win probability is displayed."],
             ["Markets are not used.", "The model is independent of betting odds and has not been benchmarked against them. Nothing here is betting advice."],
@@ -79,10 +81,15 @@ const LABELS: Record<string, [string, string]> = {
   t_travel: ["Team travel", "thousands of km since last game"],
   t_tz: ["Time zones crossed", "hours, eastward positive"],
   elo_diff: ["Elo difference", "per 100 Elo points"],
+  t_lu_toi: ["Team lineup availability", "minutes of usual ice time gained or missing"],
+  o_lu_toi: ["Opponent lineup availability", "minutes of usual ice time gained or missing"],
+  t_lu_gs: ["Team lineup availability", "game-score value gained or missing"],
+  o_lu_gs: ["Opponent lineup availability", "game-score value gained or missing"],
 };
 
 async function Numbers() {
-  const [acc, meta] = await Promise.all([api<Accuracy>("/v1/accuracy"), api<Meta>("/v1/meta")]);
+  await connection();
+  const [acc, meta] = await Promise.all([apiCached<Accuracy>("/v1/accuracy"), apiCached<Meta>("/v1/meta")]);
   const mv = acc?.model_versions.find((v) => v.is_active);
   const bt = acc?.backtest;
   return (
@@ -147,7 +154,8 @@ async function Numbers() {
             <p>
               <strong className="text-ink">Simplest model that holds up.</strong> Candidates were compared on seasons {seasonLabel(bt.selection_seasons[0])} to {seasonLabel(bt.selection_seasons[1])};
               the simplest one not significantly worse than the best was kept. Seasons {seasonLabel(bt.confirmation_seasons[0])} onward were held back and used only to confirm the result.
-              Gradient boosting, a blended model, separate five-on-five and special-teams ratings, and a spread calibration were all tested and left out because they did not help.
+              Lineup availability was added this way, after it improved forecasts on the comparison seasons. Gradient boosting, a blended model, separate five-on-five and
+              special-teams ratings, and a spread calibration were all tested and left out because they did not help.
             </p>
             <p>
               Full results, including benchmarks, calibration and every individual forecast, are on the <Link href="/accuracy" className="text-ice hover:underline">Accuracy page</Link>.

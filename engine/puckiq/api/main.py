@@ -168,16 +168,24 @@ def game(game_id: int):
         snap = q.snapshot_for(game_id)
         if snap and card["result"] is None:
             row = snap["row"]
+            am = q.cached("active_model", 60, pub.active_model)
+            has_lineup = bool(am and "t_lu_toi" in am[1].glm.cols and snap.get("lineups"))
             out["lab"] = {
+                # the ten most-used skaters from each team's last lineup; marking
+                # one out re-runs the model with its lineup input reduced
+                "skaters": {side: [{"pid": x["pid"], "name": x["name"], "toi": x["toi"], "defence": x["defence"]}
+                                   for x in ((snap["lineups"] or {}).get(side) or {}).get("skaters", [])[:10]]
+                            for side in ("home", "away")} if has_lineup else None,
                 "goalies": {side: [{"pid": go["pid"], "name": go["name"], "prob": go["prob"], "rating": go["rating"]}
                                    for go in snap["goalies"][side]] for side in ("home", "away")},
                 "current": {"home_b2b": bool(row.get("h_b2b")), "away_b2b": bool(row.get("a_b2b")),
                             "home_g7": int(row.get("h_g7") or 0), "away_g7": int(row.get("a_g7") or 0),
                             "home_rest_days": row.get("h_rest"), "away_rest_days": row.get("a_rest")},
                 "domain": {"g7": list(LAB_DOMAIN["g7"])},
-                "unsupported": [
-                    {"control": "player_unavailable", "reason": "The model has no player-level inputs for skaters, so the effect of a missing skater cannot be computed. Not offered rather than guessed."},
+                "unsupported": ([] if has_lineup else [
+                    {"control": "player_unavailable", "reason": "This forecast's model has no lineup input, so the effect of a missing skater cannot be computed. Not offered rather than guessed."}]) + [
                     {"control": "rest_days_beyond_back_to_back", "reason": "The model's validated rest inputs are back-to-back status and games in the last 7 days."},
+                    {"control": "goalie_injury_or_form", "reason": "Goalies can be swapped, but a goalie playing hurt or on a hot streak beyond his rating is not something the model measures."},
                 ],
             }
     return out
@@ -190,6 +198,8 @@ class LabRequest(BaseModel):
     away_b2b: bool | None = None
     home_g7: int | None = Field(None, ge=LAB_DOMAIN["g7"][0], le=LAB_DOMAIN["g7"][1])
     away_g7: int | None = Field(None, ge=LAB_DOMAIN["g7"][0], le=LAB_DOMAIN["g7"][1])
+    home_out: list[int] = Field(default_factory=list, max_length=3)   # skaters to treat as not dressing
+    away_out: list[int] = Field(default_factory=list, max_length=3)
 
 
 def _mini(res: dict) -> dict:
@@ -242,33 +252,41 @@ def lab(game_id: int, body: LabRequest):
         eff_g7 = overrides.get(f"{pre}_g7", row.get(f"{pre}_g7"))
         if eff_b2b == 1.0 and eff_g7 is not None and eff_g7 < 1:
             raise HTTPException(422, "A back-to-back implies at least one game in the last 7 days.")
+    applied_out: dict[str, list[str]] = {"home": [], "away": []}
+    for side, pre in (("home", "h"), ("away", "a")):
+        out_ids = getattr(body, f"{side}_out")
+        if not out_ids:
+            continue
+        lu = (snap.get("lineups") or {}).get(side)
+        if "t_lu_toi" not in fc.glm.cols or not lu:
+            raise HTTPException(422, "This forecast's model has no lineup input, so a missing skater cannot be computed.")
+        by_id = {x["pid"]: x for x in lu["skaters"]}
+        delta = 0.0
+        for pid in dict.fromkeys(out_ids):
+            sk = by_id.get(pid)
+            if sk is None:
+                raise HTTPException(422, f"Skater {pid} was not in this team's most recent lineup.")
+            # he is replaced by a skater the model knows nothing about, rated
+            # at the league average for the position
+            delta -= max(0.0, sk["toi"] - lu["replacement"]["D" if sk["defence"] else "F"])
+            applied_out[side].append(sk["name"])
+        value = float(row.get(f"{pre}_lu_toi") or 0.0) + delta
+        lo = (fc.domain.get("lu_toi") or [-1e9])[0]
+        if value < lo:
+            raise HTTPException(422, "That many absences is outside the range the model was validated on.")
+        overrides[f"{pre}_lu_toi"] = value
     seed = (game_id * 7919) & 0x7FFFFFFF
     base = fc.forecast(row, goalies, seed=seed)
     scen = fc.forecast(row, scen_goalies, seed=seed, overrides=overrides)
     return {"baseline": _mini(base), "scenario": _mini(scen), "warnings": warnings,
             "applied": {"goalies": {s: scen_goalies[s][0]["name"] if len(scen_goalies[s]) == 1 else None for s in ("home", "away")},
-                        "overrides": overrides},
+                        "overrides": overrides, "skaters_out": applied_out},
             "note": "Same model and simulator as the published forecast, with common random numbers so differences reflect the inputs."}
 
 
 @app.get("/v1/accuracy")
 def accuracy():
-    bt = q.backtest_summary()
-    out = {"forward": q.forward_record(), "model_versions": q.model_versions(), "backtest": None}
-    if bt:
-        chosen = bt["chosen_model"]
-        proj = f"{chosen}_proj"
-        show = ["baseline_home", "elo_raw", "elo_goals", "scoring_avg", proj, chosen, "xg_glm", "xg_glm_elo", "gbm", "blend"]
-        out["backtest"] = {
-            **{k: bt[k] for k in ("generated_at", "method", "first_training_season", "test_seasons", "selection_seasons",
-                                  "confirmation_seasons", "chosen_model", "selection_reason", "significance", "ablation", "additions")},
-            "primary": proj if proj in bt["models"] else chosen,
-            "models": {k: {x: bt["models"][k][x] for x in ("description", "overall", "selection_window", "confirmation_window",
-                                                            "regular_season", "playoffs")} for k in show if k in bt["models"]},
-            "detail": {k: bt["models"][k] for k in (proj, chosen) if k in bt["models"]},
-            "selection_tests": bt["selection_tests"],
-        }
-    return out
+    return {"forward": q.forward_record(), "model_versions": q.model_versions(), "backtest": q.backtest_public()}
 
 
 @app.get("/v1/accuracy/history")

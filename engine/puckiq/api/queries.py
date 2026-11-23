@@ -165,8 +165,20 @@ def game_row(game_id: int) -> dict | None:
 
 
 def season_table(season: int) -> dict[int, dict]:
-    """Season-to-date descriptive statistics for every team (regular season)."""
+    """Season-to-date descriptive statistics for every team. Served from the
+    summary the pipeline stores after each update; computed from the raw
+    tables only when no stored summary exists (local development)."""
     def load():
+        doc = db.get_document(f"season_table:{season}")
+        if doc is not None:
+            return {int(k): v for k, v in doc.items()}
+        return compute_season_table(season)
+    return cached(f"season_table:{season}", 300, load)
+
+
+def compute_season_table(season: int) -> dict[int, dict]:
+    """Season-to-date descriptive statistics for every team (regular season)."""
+    if True:
         with db.begin() as c:
             g = pd.read_sql(sa.select(db.games).where(db.games.c.season == season, db.games.c.game_type == config.REGULAR,
                                                       db.games.c.home_score.isnot(None)), c)
@@ -226,11 +238,19 @@ def season_table(season: int) -> dict[int, dict]:
                 "ratings": ratings.get(int(tid)),
             }
         return out
-    return cached(f"season_table:{season}", 120, load)
 
 
 def goalie_season(season: int) -> dict[int, dict]:
     def load():
+        doc = db.get_document(f"goalie_season:{season}")
+        if doc is not None:
+            return {int(k): v for k, v in doc.items()}
+        return compute_goalie_season(season)
+    return cached(f"goalie_season:{season}", 300, load)
+
+
+def compute_goalie_season(season: int) -> dict[int, dict]:
+    if True:
         with db.begin() as c:
             d = pd.read_sql(sa.select(db.goalie_game_stats, db.games.c.game_date).join(db.games, db.games.c.id == db.goalie_game_stats.c.game_id)
                             .where(db.games.c.season == season, db.games.c.game_type == config.REGULAR), c)
@@ -245,7 +265,6 @@ def goalie_season(season: int) -> dict[int, dict]:
                         "gsax_per_60": float((xg - x["ga_on_xg"].sum()) / x["toi"].sum() * 3600) if x["toi"].sum() else None}
             out[int(pid)] = {"season": agg(g), "last5": agg(g.tail(5)), "last_start": str(g[g["started"] == 1]["game_date"].max()) if g["started"].any() else None}
         return out
-    return cached(f"goalie_season:{season}", 120, load)
 
 
 def forecast_detail(game_id: int) -> dict | None:
@@ -268,6 +287,7 @@ def forecast_detail(game_id: int) -> dict | None:
         "top_scores": s["top_scores"], "totals": s["totals"], "diffs": s["diffs"], "expected_total": s["expected_total"],
         "extras": s["extras"], "confidence": s["confidence"], "drivers": s["drivers"], "goalies": s["goalies"],
         "data_freshness": s.get("data_freshness"), "availability": s.get("availability"),
+        "lineup_watch": s.get("lineup_watch"),
         "matrix": {"max_goals": dist["max_goals"], "final": _j(dist["final_matrix"]), "regulation": _j(dist["regulation_matrix"]),
                    "overflow": dist["overflow_mass"]},
     }
@@ -302,6 +322,43 @@ def backtest_summary() -> dict | None:
         p = config.ARTIFACT_DIR / "backtest" / "summary.json"
         return json.loads(p.read_text()) if p.exists() else None
     return cached("backtest", 300, load)
+
+
+PUBLIC_MODELS = ["baseline_home", "elo_raw", "elo_goals", "scoring_avg", "xg_lean_proj", "xg_lean", "xg_glm", "xg_glm_elo", "gbm", "blend"]
+
+
+def public_backtest(bt: dict) -> dict:
+    """The part of the backtest report the site shows (about a fifth of the
+    full report)."""
+    chosen = bt["chosen_model"]
+    proj = f"{chosen}_proj"
+    show = list(dict.fromkeys(PUBLIC_MODELS[:4] + [proj, chosen] + PUBLIC_MODELS[4:]))
+    return {
+        **{k: bt.get(k) for k in ("generated_at", "method", "first_training_season", "test_seasons", "selection_seasons",
+                                  "confirmation_seasons", "chosen_model", "chosen_groups", "selection_reason", "significance",
+                                  "ablation", "additions")},
+        "primary": proj if proj in bt["models"] else chosen,
+        "models": {k: {x: bt["models"][k][x] for x in ("description", "overall", "selection_window", "confirmation_window",
+                                                        "regular_season", "playoffs")} for k in show if k in bt["models"]},
+        "detail": {k: bt["models"][k] for k in (proj, chosen) if k in bt["models"]},
+        "selection_tests": bt["selection_tests"],
+    }
+
+
+def backtest_public() -> dict | None:
+    def load():
+        doc = db.get_document("backtest_public")
+        if doc is not None:
+            return doc
+        full = backtest_summary()
+        return public_backtest(full) if full else None
+    return cached("backtest_public", 1800, load)
+
+
+def backtest_primary() -> str:
+    """Model whose backtest rows are shown: the chosen model with projected
+    goalies, i.e. what was knowable well before each game."""
+    return (backtest_public() or {}).get("primary", "xg_lean_proj")
 
 
 def _metrics(d: pd.DataFrame) -> dict:
@@ -366,7 +423,7 @@ def history(source: str, season: int | None, team_id: int | None, limit: int, of
             B = db.backtest_predictions
             q = (sa.select(G.c.id, G.c.game_date, G.c.home_team_id, G.c.away_team_id, G.c.home_score, G.c.away_score, G.c.last_period_type,
                            B.c.p_home_win, B.c.exp_home_goals, B.c.exp_away_goals, B.c.ml_home_goals, B.c.ml_away_goals, B.c.p_actual_score)
-                 .join(B, B.c.game_id == G.c.id).where(B.c.model_key == "xg_lean_proj"))
+                 .join(B, B.c.game_id == G.c.id).where(B.c.model_key == backtest_primary()))
         if season:
             q = q.where(G.c.season == season)
         if team_id:

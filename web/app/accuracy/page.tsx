@@ -4,7 +4,7 @@ import { Suspense } from "react";
 
 import { CalibrationChart, ConfidenceChart, SeasonLines } from "@/components/charts";
 import { Chip, PageSkeleton, Section, Stat, TeamLogo, Unavailable } from "@/components/ui";
-import { api } from "@/lib/api";
+import { apiCached } from "@/lib/api";
 import { fx, GROUP_NAMES, MODEL_NAMES, pct, seasonLabel, stampET } from "@/lib/format";
 import type { Accuracy, Boot, History, Metrics, TeamsResponse } from "@/lib/types";
 
@@ -45,7 +45,7 @@ function Tiles({ m, base }: { m: Metrics; base?: Metrics }) {
 
 async function Body({ searchParams }: { searchParams: PageProps<"/accuracy">["searchParams"] }) {
   const sp = await searchParams;
-  const acc = await api<Accuracy>("/v1/accuracy");
+  const acc = await apiCached<Accuracy>("/v1/accuracy");
   if (!acc) return <Unavailable title="Accuracy data is unavailable." />;
   const { forward: fw, backtest: bt } = acc;
   const src = sp.source === "backtest" || (sp.source !== "forward" && fw.final.n === 0) ? "backtest" : "forward";
@@ -55,7 +55,7 @@ async function Body({ searchParams }: { searchParams: PageProps<"/accuracy">["se
   const qs = new URLSearchParams({ source: src, limit: "25", offset: String(page * 25) });
   if (season) qs.set("season", season);
   if (team) qs.set("team", team);
-  const [hist, teams] = await Promise.all([api<History>(`/v1/accuracy/history?${qs}`), api<TeamsResponse>("/v1/teams")]);
+  const [hist, teams] = await Promise.all([apiCached<History>(`/v1/accuracy/history?${qs}`), apiCached<TeamsResponse>("/v1/teams")]);
   const link = (o: Record<string, string | number>) => {
     const q = new URLSearchParams({ source: src, ...(season && { season }), ...(team && { team }) });
     for (const [k, v] of Object.entries(o)) {
@@ -189,11 +189,12 @@ async function Body({ searchParams }: { searchParams: PageProps<"/accuracy">["se
                     ["chosen_vs_scoring_avg_score_log_loss", "Score log loss vs scoring-average baseline"],
                     ["chosen_vs_elo_goals_score_log_loss", "Score log loss vs Elo → goals"],
                     ["projected_vs_confirmed_goalie_log_loss", "Projected vs confirmed goalies, winner log loss"],
+                    ["chosen_vs_lean_score_log_loss", "Score log loss vs the same model without lineup inputs"],
                   ].filter(([k]) => bt.significance[k]).map(([k, label]) => (
                     <li key={k} className="flex flex-wrap items-baseline justify-between gap-x-4">
                       <span className="text-ink-2">{label}</span>
                       <span className="num text-ink">
-                        {ci(bt.significance[k])} <span className={bt.significance[k].significant ? "text-good" : "text-mute"}>{bt.significance[k].significant ? "significant" : "not significant"}</span>
+                        {ci(bt.significance[k]!)} <span className={bt.significance[k]!.significant ? "text-good" : "text-mute"}>{bt.significance[k]!.significant ? "significant" : "not significant"}</span>
                       </span>
                     </li>
                   ))}
@@ -212,11 +213,23 @@ async function Body({ searchParams }: { searchParams: PageProps<"/accuracy">["se
                   {Object.entries(bt.additions).map(([k, v]) => (
                     <li key={k} className="flex flex-wrap items-baseline justify-between gap-x-4">
                       <span className="text-ink-2">Add: {GROUP_NAMES[k] ?? k}</span>
-                      <span className="num text-ink">{ci(v.delta_score_log_loss)} <span className="text-mute">{v.delta_score_log_loss.significant && v.delta_score_log_loss.mean_diff < 0 ? "helps" : "not adopted"}</span></span>
+                      <span className="num text-ink">
+                        {ci(v.delta_score_log_loss)}{" "}
+                        {bt.chosen_groups?.includes(k) ? (
+                          <span className="text-good">adopted</span>
+                        ) : k.endsWith("_conf") ? (
+                          <span className="text-mute">game-day only</span>
+                        ) : (
+                          <span className="text-mute">{v.delta_score_log_loss.significant && v.delta_score_log_loss.mean_diff < 0 ? "helps, not chosen" : "not adopted"}</span>
+                        )}
+                      </span>
                     </li>
                   ))}
                 </ul>
-                <p className="mt-3 text-xs text-mute">Change in score log loss. For removals, positive means forecasts got worse without it. For additions, negative would mean an improvement.</p>
+                <p className="mt-3 text-xs text-mute">
+                  Change in score log loss against the model without lineup inputs. For removals, positive means forecasts got worse without it. For additions, negative means an
+                  improvement. Game-day lineups are only known shortly before puck drop, so they show what confirmed lineups would be worth, not what the model uses.
+                </p>
               </div>
             </div>
           </Section>

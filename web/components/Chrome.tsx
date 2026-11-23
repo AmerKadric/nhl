@@ -1,7 +1,8 @@
 import Link from "next/link";
+import { connection } from "next/server";
 import { Suspense } from "react";
 
-import { api } from "@/lib/api";
+import { apiCached } from "@/lib/api";
 import { stampET } from "@/lib/format";
 import type { Meta } from "@/lib/types";
 
@@ -31,8 +32,9 @@ export function Header() {
 
 async function DataStatus() {
   let meta: Meta | null = null;
+  await connection();
   try {
-    meta = await api<Meta>("/v1/meta");
+    meta = await apiCached<Meta>("/v1/meta");
   } catch {
     return <StatusPill tone="bad" text="Data service unreachable" />;
   }
@@ -56,8 +58,9 @@ function StatusPill({ tone, text }: { tone: "good" | "warn" | "bad"; text: strin
 /** Shown wherever forecasts appear if any upstream feed is stale. */
 export async function StaleBanner() {
   let meta: Meta | null = null;
+  await connection();
   try {
-    meta = await api<Meta>("/v1/meta");
+    meta = await apiCached<Meta>("/v1/meta");
   } catch {
     return null;
   }
@@ -95,7 +98,7 @@ export function Footer() {
             </a>
             . Schedule, results and live game state: NHL.
           </p>
-          <p className="mt-2 text-mute">Injury and confirmed-lineup data are not available to the model.</p>
+          <p className="mt-2 text-mute">Injury reports and confirmed game-day lineups are not available to the model.</p>
         </div>
         <div>
           <div className="eyebrow mb-2">About</div>

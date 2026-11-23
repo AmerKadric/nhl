@@ -8,9 +8,9 @@ import { StaleBanner } from "@/components/Chrome";
 import { DistBars, ScoreMatrix } from "@/components/interactive";
 import { Lab } from "@/components/Lab";
 import { Chip, PageSkeleton, Section, Stat, TeamLogo, Unavailable } from "@/components/ui";
-import { api } from "@/lib/api";
+import { apiCached } from "@/lib/api";
 import { dayLabel, finalLabel, fx, onDark, pct, periodLabel, recordStr, signed, stampET, timeET } from "@/lib/format";
-import type { GameDetail, GoalieMatchup, TeamBrief } from "@/lib/types";
+import type { GameDetail, GoalieMatchup, LineupWatch, TeamBrief } from "@/lib/types";
 
 export const metadata: Metadata = { title: "Matchup intelligence" };
 
@@ -25,7 +25,7 @@ export default function Page({ params }: PageProps<"/game/[id]">) {
 async function Matchup({ params }: { params: PageProps<"/game/[id]">["params"] }) {
   const { id } = await params;
   if (!/^\d{6,12}$/.test(id)) notFound();
-  const d = await api<GameDetail>(`/v1/games/${id}`);
+  const d = await apiCached<GameDetail>(`/v1/games/${id}`, "live");
   if (!d) notFound();
   const { game: g, forecast: f } = d;
   const { home, away } = g;
@@ -177,8 +177,8 @@ async function Matchup({ params }: { params: PageProps<"/game/[id]">["params"] }
             <div className="panel p-5">
               <DriverBars drivers={f.drivers} home={home} away={away} />
               <p className="mt-5 border-t border-line-soft pt-3 text-xs text-mute">
-                Not in the model: injuries, line combinations and skater absences (no licensed source), and separate special-teams or five-on-five ratings, which were tested and did
-                not improve out-of-sample forecasts. See <Link href="/methodology" className="text-ice hover:underline">the method</Link>.
+                Not in the model: injury reports and tonight&apos;s confirmed lineup (no licensed source; it sees only who dressed last game), and separate special-teams or five-on-five
+                ratings, which were tested and did not improve out-of-sample forecasts. See <Link href="/methodology" className="text-ice hover:underline">the method</Link>.
               </p>
             </div>
           </Section>
@@ -196,6 +196,22 @@ async function Matchup({ params }: { params: PageProps<"/game/[id]">["params"] }
               ))}
             </div>
           </Section>
+
+          {/* lineup watch */}
+          {f.lineup_watch && (
+            <Section
+              id="lineups"
+              eyebrow="Lineup watch"
+              title="Regulars who sat out last game"
+              note="Skaters who usually dress but were not in their team's most recent lineup, from NHL box scores. This is not an injury report: PUCKIQ does not know why a player sat out or whether he returns tonight."
+            >
+              <div className="grid gap-4 md:grid-cols-2">
+                {(["away", "home"] as const).map((s) => (
+                  <LineupPanel key={s} team={s === "home" ? home : away} watch={f.lineup_watch![s]} />
+                ))}
+              </div>
+            </Section>
+          )}
 
           {/* F — matrix */}
           <Section id="matrix" eyebrow="Score probability matrix" title="Every final score" note="Hover, tap or tab to a cell to read the chance of that exact final score.">
@@ -259,7 +275,7 @@ async function Matchup({ params }: { params: PageProps<"/game/[id]">["params"] }
                     <tr key={v.version_no} className="border-b border-line-soft last:border-0">
                       <td className="num px-4 py-2.5 text-ink">v{v.version_no}{v.is_latest && <span className="ml-2 text-xs text-ice">latest</span>}</td>
                       <td className="num px-4 py-2.5 text-ink-2">{stampET(v.published_at)}</td>
-                      <td className="px-4 py-2.5 text-ink-2">{v.reason === "initial" ? "First forecast" : v.reason === "goalie_confirmed" ? "Goalie confirmed" : "New data"}</td>
+                      <td className="px-4 py-2.5 text-ink-2">{v.reason === "initial" ? "First forecast" : v.reason === "goalie_confirmed" ? "Goalie confirmed" : v.reason === "model_updated" ? "Model updated" : "New data"}</td>
                       <td className="px-4 py-2.5 text-ink-2">{v.goalie_state}</td>
                       <td className="num px-4 py-2.5 text-ink">{pct(v.p_home_win, 1)}</td>
                       <td className="num px-4 py-2.5 text-ink">{away.abbrev} {v.ml_away_goals}–{v.ml_home_goals} {home.abbrev}</td>
@@ -345,6 +361,38 @@ function GoaliePanel({ team, goalies, effect, opp }: { team: TeamBrief; goalies:
           Estimated effect on this game: {team.abbrev}&apos;s expected goaltending changes {opp.abbrev}&apos;s scoring rate by{" "}
           <span className="num text-ink">{signed(effect * 100, 1)}%</span> relative to a typical NHL starter.
         </p>
+      )}
+    </div>
+  );
+}
+
+function LineupPanel({ team, watch }: { team: TeamBrief; watch: LineupWatch }) {
+  return (
+    <div className="panel p-5">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <TeamLogo team={team} size={30} />
+          <div className="display text-lg font-semibold tracking-wide">{team.name}</div>
+        </div>
+        {watch.as_of && <span className="num text-xs text-mute">last game {watch.as_of}</span>}
+      </div>
+      {!watch.available ? (
+        <p className="mt-4 text-sm text-ink-2">Lineup data is not available for this team.</p>
+      ) : watch.absent.length === 0 ? (
+        <p className="mt-4 text-sm text-ink-2">Every regular skater dressed in the last game.</p>
+      ) : (
+        <ul className="mt-4 divide-y divide-line-soft">
+          {watch.absent.map((a) => (
+            <li key={a.pid} className="flex items-center justify-between gap-3 py-2 text-sm">
+              <span>
+                <span className="font-medium text-ink">{a.name}</span> <span className="text-xs text-mute">{a.defence ? "defence" : "forward"}</span>
+              </span>
+              <span className="num text-xs text-ink-2">
+                {a.toi.toFixed(1)} min/game · dressed {Math.round(a.dress_rate * 100)}% recently
+              </span>
+            </li>
+          ))}
+        </ul>
       )}
     </div>
   );

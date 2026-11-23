@@ -132,6 +132,20 @@ goalie_game_stats = Table(
     Index("ix_ggs_team", "team_id", "game_id"),
 )
 
+# One row per skater who dressed in a game: who was in the lineup and how
+# much they played. The basis of the lineup-strength inputs.
+skater_game_stats = Table(
+    "skater_game_stats", metadata,
+    Column("game_id", Integer, ForeignKey("games.id"), primary_key=True),
+    Column("player_id", Integer, ForeignKey("players.id"), primary_key=True),
+    Column("team_id", Integer, ForeignKey("teams.id"), nullable=False),
+    Column("position", String(1), nullable=False),  # C L R D
+    Column("toi", Float),  # seconds
+    Column("goals", Integer), Column("assists", Integer), Column("shots", Integer),
+    Column("plus_minus", Integer), Column("pim", Integer), Column("pp_points", Integer),
+    Index("ix_sgs_team", "team_id", "game_id"),
+)
+
 # Confirmed / projected starters observed before a game (forward only).
 goalie_status = Table(
     "goalie_status", metadata,
@@ -465,17 +479,19 @@ def get_document(key: str) -> dict | None:
     return json.loads(row[0]) if isinstance(row[0], str) else row[0]
 
 
-def copy_from(source_url: str, chunk: int = 2000) -> dict[str, int]:
+def copy_from(source_url: str, chunk: int = 2000, tables: list[str] | None = None) -> dict[str, int]:
     """Copy every table from another database into this one (for example a
     local SQLite file into production PostgreSQL), keeping primary keys so
     forecast history and its evaluations stay linked. Idempotent: rows are
-    upserted on their primary key."""
+    upserted on their primary key. `tables` limits the copy to the named
+    tables; without it every table is overwritten with the source's rows, so
+    only do that into an empty or older database."""
     src = sa.create_engine(source_url, future=True)
     create_all()
     counts: dict[str, int] = {}
     with src.connect() as sc:
         for table in metadata.sorted_tables:   # parents before children
-            if not sa.inspect(src).has_table(table.name):
+            if not sa.inspect(src).has_table(table.name) or (tables and table.name not in tables):
                 continue
             n = 0
             result = sc.execute(sa.select(table)).mappings()

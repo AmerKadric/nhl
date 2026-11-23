@@ -40,7 +40,7 @@ MAX_GOALS = 12  # score grid is 0..MAX_GOALS per team; mass beyond is tracked
 REGULAR, PLAYOFF = 2, 3
 
 # Data older than this (hours) is flagged stale in the API and UI.
-STALE_AFTER_HOURS = {"nhl_games": 30, "moneypuck_teams": 54, "moneypuck_shots": 54, "nhl_goalies": 54}
+STALE_AFTER_HOURS = {"nhl_games": 30, "moneypuck_teams": 54, "moneypuck_shots": 54, "nhl_goalies": 54, "nhl_skaters": 54}
 
 
 def season_id(start_year: int) -> int:

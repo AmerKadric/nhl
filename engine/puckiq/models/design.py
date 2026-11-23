@@ -12,6 +12,7 @@ TEAM_FEATS = [
     "pp", "pk", "pen_drawn", "pen_taken", "fin", "rest", "b2b", "g7", "travel", "tz", "road_streak",
     "xgs_l5", "xgs_l10", "xgs_l20", "gd_l5", "gd_l10", "gd_l20",
     "gk", "gk_recent", "gk_n", "gk_idle", "gk_proj",
+    "lu_gs", "lu_toi", "lu_gs_conf", "lu_toi_conf",
 ]
 
 # Feature groups: the unit of ablation testing and of forecast explanations.
@@ -26,6 +27,12 @@ GROUPS: dict[str, list[str]] = {
     "goalie": ["o_gk"],
     "rest": ["t_b2b", "o_b2b", "t_g7", "o_g7", "t_travel", "t_tz"],
     "elo": ["elo_diff"],
+    # lineup strength of the most recently dressed lineup vs the team's norm
+    "lineup_gs": ["t_lu_gs", "o_lu_gs"],
+    "lineup_toi": ["t_lu_toi", "o_lu_toi"],
+    # the same measured on the lineup actually dressed (game-day information)
+    "lineup_gs_conf": ["t_lu_gs_conf", "o_lu_gs_conf"],
+    "lineup_toi_conf": ["t_lu_toi_conf", "o_lu_toi_conf"],
 }
 
 GROUP_LABELS = {
@@ -39,6 +46,10 @@ GROUP_LABELS = {
     "goalie": "Goaltending",
     "rest": "Rest and travel",
     "elo": "Results-based rating",
+    "lineup_gs": "Lineup availability",
+    "lineup_toi": "Lineup availability",
+    "lineup_gs_conf": "Lineup availability",
+    "lineup_toi_conf": "Lineup availability",
 }
 
 GBM_EXTRA = [

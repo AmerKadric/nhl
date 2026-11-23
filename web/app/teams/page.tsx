@@ -3,7 +3,7 @@ import Link from "next/link";
 import { Suspense } from "react";
 
 import { PageSkeleton, TeamLogo, Unavailable } from "@/components/ui";
-import { api } from "@/lib/api";
+import { apiCached } from "@/lib/api";
 import { pct, recordStr, seasonLabel, signed } from "@/lib/format";
 import type { TeamsResponse } from "@/lib/types";
 
@@ -32,7 +32,7 @@ export default function Page({ searchParams }: PageProps<"/teams">) {
 
 async function Table({ searchParams }: { searchParams: PageProps<"/teams">["searchParams"] }) {
   const sp = await searchParams;
-  const data = await api<TeamsResponse>("/v1/teams");
+  const data = await apiCached<TeamsResponse>("/v1/teams");
   if (!data) return <Unavailable title="Team data is unavailable." />;
   const key = typeof sp.sort === "string" && SORTS[sp.sort] ? sp.sort : "elo";
   const teams = [...data.teams].sort((a, b) => SORTS[key].get(b) - SORTS[key].get(a));

@@ -6,7 +6,7 @@ import { Suspense } from "react";
 import { GameCard } from "@/components/GameCard";
 import { RatingChart } from "@/components/interactive";
 import { Chip, PageSkeleton, Section, Stat, TeamLogo, Unavailable } from "@/components/ui";
-import { api } from "@/lib/api";
+import { apiCached } from "@/lib/api";
 import { fx, onDark, pct, recordStr, seasonLabel, signed } from "@/lib/format";
 import type { HistoryRow, RatingRanges, TeamPage } from "@/lib/types";
 
@@ -44,7 +44,7 @@ function RangeBar({ value, range, fmt, label, unit }: { value: number; range?: {
 async function Team({ params }: { params: PageProps<"/teams/[abbrev]">["params"] }) {
   const { abbrev } = await params;
   if (!/^[A-Za-z]{2,4}$/.test(abbrev)) notFound();
-  const d = await api<TeamPage>(`/v1/teams/${abbrev.toUpperCase()}`);
+  const d = await apiCached<TeamPage>(`/v1/teams/${abbrev.toUpperCase()}`);
   if (!d) notFound();
   const { team: t, summary: s } = d;
   const r: RatingRanges = d.rating_ranges;

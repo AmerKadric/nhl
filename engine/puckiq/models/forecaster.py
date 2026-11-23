@@ -5,7 +5,7 @@ from __future__ import annotations
 import datetime as dt
 import hashlib
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
@@ -40,13 +40,18 @@ class Forecaster:
     sp: SimParams
     trained_through: dt.date
     n_train_games: int
+    domain: dict = field(default_factory=dict)   # validated input ranges for scenarios
 
     # ---- training ---------------------------------------------------------
     @classmethod
-    def train(cls, feat: pd.DataFrame) -> "Forecaster":
+    def train(cls, feat: pd.DataFrame, groups: list[str] | None = None) -> "Forecaster":
+        """Fit on every finished game. `groups` are the feature groups the
+        walk-forward backtest selected (default: the lean set)."""
+        groups = groups or GROUPS_LEAN
+        arch = "1.1" if any(g.startswith("lineup") for g in groups) else ARCH_VERSION
         f = feat[feat["final"] & (feat["season"] >= config.FIRST_MODEL_SEASON)]
         rows = team_rows(f, "confirmed")
-        glm = GLMRateModel(GROUPS_LEAN).fit(rows)
+        glm = GLMRateModel(groups).fit(rows)
         lam = pd.DataFrame({"g": rows["game_id"].values, "h": rows["is_home"].values, "lam": glm.predict(rows)})
         lh = lam[lam["h"] == 1].set_index("g")["lam"]
         la = lam[lam["h"] == 0].set_index("g")["lam"]
@@ -63,13 +68,18 @@ class Forecaster:
         sp.p_shootout, sp.ot_home_intercept = era.p_shootout, era.ot_home_intercept
         sp.ot_strength_slope, sp.so_strength_slope = era.ot_strength_slope, era.so_strength_slope
         through = max(f["game_date"])
-        return cls(version=f"{ARCHITECTURE}-{ARCH_VERSION}+{through:%Y%m%d}", glm=glm, sp=sp,
-                   trained_through=through, n_train_games=int(len(G)))
+        domain = {}
+        if "h_lu_toi" in f:
+            v = pd.concat([f["h_lu_toi"], f["a_lu_toi"]])
+            domain["lu_toi"] = [float(v.quantile(0.005)), float(v.quantile(0.995))]
+        return cls(version=f"{ARCHITECTURE}-{arch}+{through:%Y%m%d}", glm=glm, sp=sp,
+                   trained_through=through, n_train_games=int(len(G)), domain=domain)
 
     # ---- persistence ------------------------------------------------------
     def to_json(self) -> dict:
         return {"version": self.version, "architecture": ARCHITECTURE, "glm": self.glm.to_json(), "sim": self.sp.to_json(),
-                "trained_through": self.trained_through.isoformat(), "n_train_games": self.n_train_games}
+                "trained_through": self.trained_through.isoformat(), "n_train_games": self.n_train_games,
+                "domain": self.domain}
 
     def save(self, path: Path | None = None) -> Path:
         path = path or (config.ARTIFACT_DIR / "models" / f"{self.version}.json")
@@ -80,7 +90,8 @@ class Forecaster:
     @classmethod
     def from_json(cls, d: dict) -> "Forecaster":
         return cls(version=d["version"], glm=GLMRateModel.from_json(d["glm"]), sp=SimParams(**d["sim"]),
-                   trained_through=dt.date.fromisoformat(d["trained_through"]), n_train_games=d["n_train_games"])
+                   trained_through=dt.date.fromisoformat(d["trained_through"]), n_train_games=d["n_train_games"],
+                   domain=d.get("domain", {}))
 
     @classmethod
     def load(cls, path: Path) -> "Forecaster":
@@ -165,13 +176,35 @@ def _norm(gs: list[dict]) -> list[dict]:
     return [dict(g, prob=g["prob"] / tot) for g in gs if g["prob"] / tot >= 0.02] or gs[:1]
 
 
-def input_hash(model_version: str, row: dict, goalies: dict) -> str:
-    """Stable fingerprint of everything a forecast depends on."""
-    keep = sorted(k for k in row if k[:2] in ("h_", "a_") or k in ("playoff", "lg_g"))
+_SPECIAL = {"elo_diff": ["h_elo", "a_elo"], "log_lg": ["lg_g"], "playoff": ["playoff"], "is_home": []}
+
+
+def model_inputs(cols: list[str]) -> list[str]:
+    """Wide feature-row keys that the model's design columns are built from."""
+    keys: set[str] = set()
+    for c in cols:
+        if c in _SPECIAL:
+            keys.update(_SPECIAL[c])
+        elif c[:2] in ("t_", "o_") and c != "o_gk":   # goalies are hashed separately
+            keys.update((f"h_{c[2:]}", f"a_{c[2:]}"))
+    return sorted(keys)
+
+
+def input_hash(model_version: str, row: dict, goalies: dict, cols: list[str] | None = None) -> str:
+    """Stable fingerprint of everything a forecast depends on. With `cols`
+    (the model's design columns) only the inputs the model uses are hashed,
+    so an unrelated statistic changing does not create a new forecast version."""
+    def val(k):
+        v = row.get(k)
+        return None if v is None or (isinstance(v, float) and np.isnan(v)) else round(float(v), 4)
+    if cols is not None:
+        keep = model_inputs(cols)
+    else:
+        skip = ("_gk_pid", "_gk", "_gk_recent", "_gk_n", "_gk_idle", "_gk_proj", "_gk_proj_top", "_gk_ncand")
+        keep = sorted(k for k in row if (k[:2] in ("h_", "a_") or k in ("playoff", "lg_g")) and not k.endswith(skip))
     payload = {
         "model": model_version,
-        "row": {k: (None if row[k] is None or (isinstance(row[k], float) and np.isnan(row[k])) else round(float(row[k]), 4)) for k in keep
-                if not k.endswith(("_gk_pid", "_gk", "_gk_recent", "_gk_n", "_gk_idle", "_gk_proj", "_gk_proj_top", "_gk_ncand"))},
+        "row": {k: val(k) for k in keep},
         "goalies": {s: [(int(g["pid"]), round(g["prob"], 3), round(g["rating"], 4)) for g in goalies[s]] for s in ("home", "away")},
     }
     return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()

@@ -5,7 +5,7 @@ import { Suspense } from "react";
 import { StaleBanner } from "@/components/Chrome";
 import { GamesBoard } from "@/components/GamesBoard";
 import { PageSkeleton, Unavailable } from "@/components/ui";
-import { api } from "@/lib/api";
+import { apiCached } from "@/lib/api";
 import { addDays, dayLabel, isDate, todayET } from "@/lib/format";
 import type { GamesResponse, Meta } from "@/lib/types";
 
@@ -48,8 +48,9 @@ export default function Home({ searchParams }: PageProps<"/">) {
 
 async function ModelLine() {
   let meta: Meta | null = null;
+  await connection();
   try {
-    meta = await api<Meta>("/v1/meta");
+    meta = await apiCached<Meta>("/v1/meta");
   } catch {
     return null;
   }
@@ -82,7 +83,7 @@ async function Slate({ searchParams }: { searchParams: PageProps<"/">["searchPar
   else if (view === "completed") [start, end] = [addDays(today, -14), today];
   else if (view === "date" && d) start = end = d;
 
-  const data = await api<GamesResponse>(`/v1/games?start=${start}&end=${end}`);
+  const data = await apiCached<GamesResponse>(`/v1/games?start=${start}&end=${end}`, "live");
   let games = data?.games ?? [];
   if (view === "completed") games = games.filter((g) => g.result).reverse();
 
@@ -90,7 +91,7 @@ async function Slate({ searchParams }: { searchParams: PageProps<"/">["searchPar
   let next: GamesResponse | null = null;
   let nextDate: string | null = null;
   if (games.length === 0 && (view === "today" || view === "tomorrow")) {
-    const ahead = await api<GamesResponse>(`/v1/games?start=${addDays(start, 1)}&end=${addDays(start, 10)}`);
+    const ahead = await apiCached<GamesResponse>(`/v1/games?start=${addDays(start, 1)}&end=${addDays(start, 10)}`, "live");
     nextDate = ahead?.games[0]?.date ?? null;
     if (ahead && nextDate) next = { ...ahead, games: ahead.games.filter((g) => g.date === nextDate) };
   }

@@ -27,10 +27,13 @@ CORE = ["home", "env", "xg5", "xga", "goals", "special", "finishing", "goalie", 
 # Groups removed one at a time from the lean model, and groups added one at a
 # time to it, to measure what each contributes out of sample.
 ABLATE = ["xga", "goals", "elo", "goalie", "rest"]
-ADD = ["xg5", "special", "finishing"]
+ADD = ["xg5", "special", "finishing", "lineup_gs", "lineup_toi", "lineup_gs_conf", "lineup_toi_conf"]
 SPREAD_GRID = (1.0, 1.05, 1.1, 1.15, 1.2, 1.25, 1.3, 1.4)
 # Candidates in order of increasing complexity.
-CANDIDATES = ["xg_lean", "xg_lean_cal", "xg_glm", "xg_glm_elo", "xg_glm_elo_cal", "blend", "gbm"]
+CANDIDATES = ["xg_lean", "add_lineup_toi", "add_lineup_gs", "xg_lean_cal", "xg_glm", "xg_glm_elo", "xg_glm_elo_cal", "blend", "gbm"]
+# Candidates that also get a projected-goalie variant (what is knowable well
+# before puck drop); the headline figures use that variant of the chosen model.
+WITH_PROJECTION = ["xg_lean", "add_lineup_toi", "add_lineup_gs"]
 
 
 def apply_spread(lam_h, lam_a, c: float):
@@ -74,6 +77,12 @@ DESCRIPTIONS = {
     "scoring_avg": "Historical scoring baseline: opponent-adjusted goals for and against.",
     "xg_glm": "Expected-goals Poisson model, confirmed starting goalies.",
     "xg_lean_proj": "Lean Poisson model, projected starting goalies (pre-confirmation).",
+    "add_lineup_toi": "Lean model plus lineup availability measured in ice time.",
+    "add_lineup_gs": "Lean model plus lineup availability measured in game score.",
+    "add_lineup_toi_proj": "Lean model plus lineup availability (ice time), projected starting goalies.",
+    "add_lineup_gs_proj": "Lean model plus lineup availability (game score), projected starting goalies.",
+    "add_lineup_toi_conf": "Lean model plus the lineup actually dressed (game-day information; an upper bound).",
+    "add_lineup_gs_conf": "Lean model plus the lineup actually dressed, by game score (game-day information).",
     "xg_glm_elo": "Expected-goals Poisson model plus Elo rating.",
     "gbm": "Gradient-boosted trees (LightGBM, Poisson objective).",
     "blend": "Log-linear blend of the Poisson model and gradient boosting.",
@@ -134,7 +143,8 @@ def run(feat: pd.DataFrame, with_gbm: bool = True, persist: bool = True) -> dict
         sim_by_season[S] = sp.to_json()
 
         lam: dict[str, pd.DataFrame] = {name: _frame(te_c, m.predict(te_c)).reindex(gids) for name, m in models.items()}
-        lam["xg_lean_proj"] = _frame(te_p, core.predict(te_p)).reindex(gids)
+        for name in WITH_PROJECTION:
+            lam[f"{name}_proj"] = _frame(te_p, models[name].predict(te_p)).reindex(gids)
         if with_gbm:
             gbm = GBMRateModel(CORE).fit(tr_c)
             lam["gbm"] = _frame(te_c, gbm.predict(te_c)).reindex(gids)
@@ -234,7 +244,7 @@ def build_summary(preds: dict[str, pd.DataFrame], seasons: list[int], sims: dict
             "ece": M.expected_calibration_error(p),
             "by_confidence": M.by_confidence(p),
         }
-        if name in ("xg_lean", "xg_lean_proj"):
+        if name in WITH_PROJECTION or name.endswith("_proj"):
             d = pd.to_datetime(p["game_date"])
             models[name]["by_month"] = {f"{m:02d}": M.summarise(p[d.dt.month == m]) for m in sorted(d.dt.month.unique())}
 
@@ -257,8 +267,10 @@ def build_summary(preds: dict[str, pd.DataFrame], seasons: list[int], sims: dict
     reason = (f"Lowest score log loss on the selection seasons: {best}. Chosen: {chosen}, the simplest candidate "
               f"not significantly worse than it on score log loss or winner log loss.")
 
-    def vs(a: str, b: str, col: str, p_a=None) -> dict:
+    def vs(a: str, b: str, col: str, window: tuple[int, int] | None = None) -> dict:
         pa, pb = preds[a], preds[b]
+        if window:
+            pa, pb = _window(pa, *window), _window(pb, *window)
         idx = pa.index.intersection(pb.index)
         return M.paired_bootstrap(pa.loc[idx, col].values, pb.loc[idx, col].values)
 
@@ -268,8 +280,10 @@ def build_summary(preds: dict[str, pd.DataFrame], seasons: list[int], sims: dict
         "chosen_vs_elo_goals_score_log_loss": vs(chosen, "elo_goals", "score_ll"),
         "chosen_vs_scoring_avg_score_log_loss": vs(chosen, "scoring_avg", "score_ll"),
         "chosen_vs_baseline_home_score_log_loss": vs(chosen, "baseline_home", "score_ll"),
-        "projected_vs_confirmed_goalie_log_loss": vs("xg_lean_proj", "xg_lean", "ll"),
-        "projected_vs_confirmed_goalie_score_log_loss": vs("xg_lean_proj", "xg_lean", "score_ll"),
+        "projected_vs_confirmed_goalie_log_loss": vs(f"{chosen}_proj", chosen, "ll") if f"{chosen}_proj" in preds else None,
+        "projected_vs_confirmed_goalie_score_log_loss": vs(f"{chosen}_proj", chosen, "score_ll") if f"{chosen}_proj" in preds else None,
+        "chosen_vs_lean_log_loss": vs(chosen, "xg_lean", "ll") if chosen != "xg_lean" else None,
+        "chosen_vs_lean_score_log_loss": vs(chosen, "xg_lean", "score_ll") if chosen != "xg_lean" else None,
     }
     ablation = {}
     for g in ABLATE:
@@ -287,6 +301,11 @@ def build_summary(preds: dict[str, pd.DataFrame], seasons: list[int], sims: dict
             # negative = adding the group improves forecasts
             "delta_log_loss": vs(f"add_{g}", "xg_lean", "ll"),
             "delta_score_log_loss": vs(f"add_{g}", "xg_lean", "score_ll"),
+            "selection": {"delta_log_loss": vs(f"add_{g}", "xg_lean", "ll", (sel_lo, sel_hi)),
+                          "delta_score_log_loss": vs(f"add_{g}", "xg_lean", "score_ll", (sel_lo, sel_hi))},
+            "confirmation": {"delta_log_loss": vs(f"add_{g}", "xg_lean", "ll", (conf_lo, last)),
+                             "delta_score_log_loss": vs(f"add_{g}", "xg_lean", "score_ll", (conf_lo, last))},
+            "accuracy": float(preds[f"add_{g}"]["correct"].mean()),
         }
     return {
         "generated_at": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
@@ -296,6 +315,7 @@ def build_summary(preds: dict[str, pd.DataFrame], seasons: list[int], sims: dict
         "selection_seasons": [sel_lo, sel_hi],
         "confirmation_seasons": [conf_lo, last],
         "chosen_model": chosen,
+        "chosen_groups": GLM_SPECS.get(chosen),
         "selection_reason": reason,
         "selection_tests": tests,
         "significance": significance,
@@ -326,8 +346,9 @@ def save(preds: dict[str, pd.DataFrame], summary: dict) -> None:
     (out / "summary.json").write_text(text)
     db.put_document("backtest_summary", json.loads(text))
     keep = ["baseline_home", "elo_goals", "scoring_avg", "xg_lean", "xg_lean_proj"]
-    if summary["chosen_model"] not in keep:
-        keep.append(summary["chosen_model"])
+    for name in (summary["chosen_model"], f"{summary['chosen_model']}_proj"):
+        if name in preds and name not in keep:
+            keep.append(name)
     rows = []
     for name in keep:
         p = preds[name]

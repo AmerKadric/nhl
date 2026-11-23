@@ -44,6 +44,7 @@ def seeded():
         db.upsert(c, db.games, g.to_dict("records"))
         db.upsert(c, db.team_game_stats, fr.tgs[~fr.tgs["game_id"].isin(up_ids)].to_dict("records"))
         db.upsert(c, db.goalie_game_stats, fr.ggs[~fr.ggs["game_id"].isin(up_ids)].to_dict("records"))
+        db.upsert(c, db.skater_game_stats, fr.sgs[~fr.sgs["game_id"].isin(up_ids)].to_dict("records"))
     return {"frames": fr, "upcoming": sorted(up_ids), "last_day": last_day}
 
 
@@ -310,3 +311,120 @@ def test_missing_values_do_not_break_prediction(published):
     row["a_b2b"] = np.nan
     r = am[1].rates(row, np.nan, 0.0)
     assert np.isfinite(r["lam_home"]) and np.isfinite(r["lam_away"])
+
+
+# --- operations ---------------------------------------------------------------
+def test_site_documents_are_stored_and_served(published):
+    """The API serves the stored season summary instead of re-aggregating."""
+    from puckiq.api import queries
+    from puckiq.pipeline import daily
+    n = daily.store_site_documents(2021)
+    assert n >= 2
+    doc = db.get_document("season_table:2021")
+    assert doc and all(isinstance(k, str) for k in doc)
+    queries.clear_cache()
+    calls = []
+    real = queries.compute_season_table
+    queries.compute_season_table = lambda season: calls.append(season) or real(season)
+    try:
+        tab = queries.season_table(2021)
+    finally:
+        queries.compute_season_table = real
+    assert not calls                       # came from the stored document
+    assert set(tab) == {int(k) for k in doc} and all(isinstance(k, int) for k in tab)
+    assert tab[6]["gp"] == doc["6"]["gp"]
+    assert queries.goalie_season(2021)
+
+
+def test_refresh_only_republishes_in_the_pregame_window(published):
+    from puckiq.pipeline import daily
+    gid = published["upcoming"][1]
+    start = published["now"] + dt.timedelta(hours=2)
+    with db.begin() as c:
+        c.execute(db.games.update().values(state=sa.case((db.games.c.state == "PRE", "FUT"), else_=db.games.c.state)))
+    assert daily.publish_needed(published["now"]) is False
+    with db.begin() as c:
+        c.execute(db.games.update().where(db.games.c.id == gid).values(state="PRE", start_time_utc=start))
+    assert daily.publish_needed(published["now"]) is True            # projected goalies, game about to start
+    with db.begin() as c:
+        c.execute(db.forecasts.update().where(db.forecasts.c.game_id == gid, db.forecasts.c.is_latest == sa.true()).values(goalie_state="confirmed"))
+    assert daily.publish_needed(published["now"]) is False           # already forecast on confirmed goalies
+    assert daily.publish_needed(start + dt.timedelta(minutes=1)) is False   # puck has dropped
+
+
+def test_copy_db_can_be_limited_to_named_tables(published, tmp_path):
+    src = "sqlite:///" + str(tmp_path / "src.db").replace("\\", "/")
+    e = sa.create_engine(src)
+    db.metadata.create_all(e)
+    with e.begin() as c:
+        c.execute(db.players.insert().values(id=999001, full_name="Copied Skater", position="C"))
+        c.execute(db.teams.insert().values(id=6, abbrev="XXX", name="Should not overwrite", franchise_key=6, active=False))
+    e.dispose()
+    counts = db.copy_from(src, tables=["players"])
+    assert counts == {"players": 1}
+    with db.begin() as c:
+        assert c.execute(sa.select(db.players.c.full_name).where(db.players.c.id == 999001)).scalar() == "Copied Skater"
+        assert c.execute(sa.select(db.teams.c.abbrev).where(db.teams.c.id == 6)).scalar() == "BOS"   # untouched
+
+
+def test_forecast_version_is_stable_when_an_unused_statistic_changes(published):
+    """Only inputs the model uses decide whether a new version is published."""
+    am = pub.active_model()
+    cols = am[1].glm.cols
+    row = {k: v for k, v in published["feat"].iloc[-1].to_dict().items() if k[:2] in ("h_", "a_") or k in ("playoff", "lg_g")}
+    goalies = {"home": [{"pid": 1, "prob": 1.0, "rating": 0.0}], "away": [{"pid": 2, "prob": 1.0, "rating": 0.0}]}
+    from puckiq.models.forecaster import input_hash
+    h = input_hash("v", row, goalies, cols)
+    assert h == input_hash("v", dict(row, h_pp=row["h_pp"] + 1.0, a_xgs_l5=0.9), goalies, cols)   # not model inputs
+    assert h != input_hash("v", dict(row, h_off_xga=row["h_off_xga"] + 0.1), goalies, cols)        # a model input
+    assert h != input_hash("v", dict(row, a_elo=row["a_elo"] + 5), goalies, cols)
+
+
+def test_lab_missing_skater_scenario(published, monkeypatch):
+    """With a lineup-aware model, marking a skater out changes the forecast
+    by exactly the model's lineup coefficient; without one it is refused."""
+    import warnings
+    warnings.simplefilter("ignore")
+    from fastapi.testclient import TestClient
+
+    from puckiq.api import main as api
+    from puckiq.api import queries
+    from puckiq.models.forecaster import GROUPS_LEAN
+    gid = published["upcoming"][1]
+    c = TestClient(api.app)
+    queries.clear_cache()
+    d = c.get(f"/v1/games/{gid}").json()
+    assert d["lab"]["skaters"] is None       # the active test model has no lineup input
+    assert any(u["control"] == "player_unavailable" for u in d["lab"]["unsupported"])
+    snap = queries.snapshot_for(gid)
+    top = snap["lineups"]["home"]["skaters"][0]
+    assert c.post(f"/v1/games/{gid}/lab", json={"home_out": [top["pid"]]}).status_code == 422
+
+    fc = Forecaster.train(published["feat"], GROUPS_LEAN + ["lineup_toi"])
+    assert fc.version.startswith("lean-poisson-1.1") and "lu_toi" in fc.domain
+    fc.domain["lu_toi"] = [-1e6, 1e6]        # the synthetic league has little lineup variation
+    monkeypatch.setattr(api.pub, "active_model", lambda: (1, fc))
+    queries.clear_cache()
+    d = c.get(f"/v1/games/{gid}").json()
+    assert [x["pid"] for x in d["lab"]["skaters"]["home"]][0] == top["pid"]
+    assert not any(u["control"] == "player_unavailable" for u in d["lab"]["unsupported"])
+    r = c.post(f"/v1/games/{gid}/lab", json={"home_out": [top["pid"]]})
+    assert r.status_code == 200
+    out = r.json()
+    assert out["applied"]["skaters_out"]["home"] == [top["name"]]
+    repl = snap["lineups"]["home"]["replacement"]["D" if top["defence"] else "F"]
+    drop = max(0.0, top["toi"] - repl)
+    assert drop > 0
+    beta = dict(zip(fc.glm.cols, fc.glm.beta[1:]))
+    assert out["applied"]["overrides"]["h_lu_toi"] == pytest.approx(snap["row"]["h_lu_toi"] - drop)
+    # the scoring rates move by exactly the fitted lineup coefficients
+    row = {k: (np.nan if v is None else v) for k, v in snap["row"].items() if k != "game_date"}
+    a = fc.rates(row, 0.0, 0.0)
+    b = fc.rates(row, 0.0, 0.0, {"h_lu_toi": snap["row"]["h_lu_toi"] - drop})
+    assert np.log(b["lam_home"] / a["lam_home"]) == pytest.approx(-drop * beta["t_lu_toi"])
+    assert np.log(b["lam_away"] / a["lam_away"]) == pytest.approx(-drop * beta["o_lu_toi"])
+    assert c.post(f"/v1/games/{gid}/lab", json={"home_out": [123456789]}).status_code == 422       # not in the lineup
+    assert c.post(f"/v1/games/{gid}/lab", json={"home_out": [1, 2, 3, 4]}).status_code == 422      # more than three
+    fc.domain["lu_toi"] = [snap["row"]["h_lu_toi"] - drop / 2, 1e6]
+    assert c.post(f"/v1/games/{gid}/lab", json={"home_out": [top["pid"]]}).status_code == 422      # outside validated range
+    queries.clear_cache()

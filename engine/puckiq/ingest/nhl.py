@@ -195,7 +195,8 @@ def fetch_scoreboard(date: dt.date) -> list[dict]:
 
 
 def finalize_from_scoreboard(date: dt.date) -> int:
-    """Persist state and final scores for a date from the live scoreboard."""
+    """Persist state and final scores for a date from the live scoreboard.
+    Returns the number of games that became final in this call."""
     rows = []
     for g in fetch_scoreboard(date):
         row = dict(id=g["id"], state=g["state"], schedule_state=g["schedule_state"], updated_at=db.utcnow())
@@ -207,9 +208,13 @@ def finalize_from_scoreboard(date: dt.date) -> int:
         rows.append(row)
     n = 0
     with db.begin() as c:
+        ids = [r["id"] for r in rows]
+        was_final = {r.id for r in c.execute(sa.select(db.games.c.id).where(db.games.c.id.in_(ids), db.games.c.state == "OFF"))} if ids else set()
         for row in rows:
             gid = row.pop("id")
-            n += c.execute(db.games.update().where(db.games.c.id == gid).values(**row)).rowcount
+            c.execute(db.games.update().where(db.games.c.id == gid).values(**row))
+            if row.get("state") == "OFF" and gid not in was_final:
+                n += 1
     return n
 
 
@@ -255,6 +260,66 @@ def ingest_goalie_logs(seasons: list[int], since: dt.date | None = None) -> int:
                         db.upsert(c, db.players, list(people.values()))
                         total += db.upsert(c, db.goalie_game_stats, rows)
                 log.info("goalie logs %s type %s: %d rows", season, gtype, len(rows))
+        run.rows = total
+    return total
+
+
+def ingest_skater_logs(seasons: list[int], since: dt.date | None = None, window_days: int = 7) -> int:
+    """Per-game skater lines (who dressed, ice time, box-score stats).
+
+    The stats API returns at most 10,000 rows per query and 100 per page, so
+    each season is read in short date windows."""
+    total = 0
+    with db.IngestionRun("nhl_skaters", "skater_logs") as run:
+        with db.begin() as c:
+            team_rows = list(c.execute(sa.select(db.teams.c.id, db.teams.c.abbrev)))
+            g = c.execute(sa.select(db.games.c.id, db.games.c.season, db.games.c.game_date, db.games.c.home_team_id,
+                                    db.games.c.away_team_id)
+                          .where(db.games.c.season.in_(seasons), db.games.c.home_score.isnot(None))).fetchall()
+        ids_by_abbrev: dict[str, list[int]] = {}
+        for r in team_rows:
+            ids_by_abbrev.setdefault(r.abbrev, []).append(r.id)
+        game_teams = {r.id: (r.home_team_id, r.away_team_id) for r in g}
+        sort = json.dumps([{"property": "gameId", "direction": "ASC"}, {"property": "playerId", "direction": "ASC"}])
+        for season in seasons:
+            dates = [r.game_date for r in g if r.season == season]
+            if not dates:
+                continue
+            start = max(min(dates), since) if since else min(dates)
+            end = max(dates)
+            n_season = 0
+            d = start
+            while d <= end:
+                hi = min(d + dt.timedelta(days=window_days - 1), end)
+                expr = f'gameDate>="{d.isoformat()}" and gameDate<="{hi.isoformat()}" and gameTypeId in (2,3)'
+                offset, rows, people = 0, [], {}
+                while True:
+                    page = client().get_json(f"{config.NHL_STATS_BASE}/skater/summary", params={
+                        "isGame": "true", "limit": 100, "start": offset, "sort": sort, "cayenneExp": expr})
+                    data = page.get("data", [])
+                    if page.get("total", 0) >= 10000:
+                        raise FetchError(f"skater window {d}..{hi} hit the 10,000-row cap; shorten window_days")
+                    for x in data:
+                        gt = game_teams.get(x["gameId"])
+                        if gt is None:
+                            continue
+                        cands = [i for i in ids_by_abbrev.get(x["teamAbbrev"], []) if i in gt]
+                        team_id = cands[0] if cands else (gt[0] if x.get("homeRoad") == "H" else gt[1])
+                        people[x["playerId"]] = dict(id=x["playerId"], full_name=x["skaterFullName"], position=x["positionCode"])
+                        rows.append(dict(game_id=x["gameId"], player_id=x["playerId"], team_id=team_id,
+                                         position=x["positionCode"], toi=x.get("timeOnIcePerGame"), goals=x.get("goals"),
+                                         assists=x.get("assists"), shots=x.get("shots"), plus_minus=x.get("plusMinus"),
+                                         pim=x.get("penaltyMinutes"), pp_points=x.get("ppPoints")))
+                    offset += len(data)
+                    if not data or offset >= page.get("total", 0):
+                        break
+                if rows:
+                    with db.begin() as c:
+                        db.upsert(c, db.players, list(people.values()))
+                        n_season += db.upsert(c, db.skater_game_stats, rows)
+                d = hi + dt.timedelta(days=1)
+            total += n_season
+            log.info("skater logs %s: %d rows", season, n_season)
         run.rows = total
     return total
 

@@ -45,6 +45,7 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("status", help="print data freshness")
     p = sub.add_parser("copy-db", help="copy all tables from another database into DATABASE_URL")
     p.add_argument("--from", dest="source", required=True, help="source SQLAlchemy URL, e.g. sqlite:///data/puckiq.db")
+    p.add_argument("--tables", help="comma-separated table names; default is every table")
     p = sub.add_parser("serve", help="run the API")
     p.add_argument("--host", default="127.0.0.1")
     p.add_argument("--port", type=int, default=8000)
@@ -100,7 +101,8 @@ def main(argv: list[str] | None = None) -> int:
     elif args.cmd == "copy-db":
         target = db.engine().url.render_as_string(hide_password=True)
         print(f"copying into {target}")
-        for name, n in db.copy_from(args.source).items():
+        only = [t.strip() for t in args.tables.split(",")] if args.tables else None
+        for name, n in db.copy_from(args.source, tables=only).items():
             print(f"  {name}: {n}")
     elif args.cmd == "serve":
         import uvicorn

@@ -96,7 +96,14 @@ export type ForecastDetail = {
   goalies: { home: GoalieModel[]; away: GoalieModel[] };
   data_freshness: Freshness | null;
   availability: Record<string, string> | null;
+  lineup_watch?: { home: LineupWatch; away: LineupWatch } | null;
   matrix: { max_goals: number; final: number[][]; regulation: number[][]; overflow: number };
+};
+
+export type LineupWatch = {
+  available: boolean;
+  as_of: string | null;
+  absent: { pid: number; name: string; dress_rate: number; toi: number; game_score: number; defence: boolean }[];
 };
 
 export type GoalieModel = { pid: number; name: string; prob: number; rating: number; xga_n: number; status: string };
@@ -156,7 +163,10 @@ export type LabInfo = {
   current: { home_b2b: boolean; away_b2b: boolean; home_g7: number; away_g7: number; home_rest_days: number | null; away_rest_days: number | null };
   domain: { g7: [number, number] };
   unsupported: { control: string; reason: string }[];
+  skaters: { home: LabSkater[]; away: LabSkater[] } | null;
 };
+
+export type LabSkater = { pid: number; name: string; toi: number; defence: boolean };
 
 export type GameDetail = {
   game: Game;
@@ -280,9 +290,10 @@ export type Accuracy = {
     selection_seasons: [number, number];
     confirmation_seasons: [number, number];
     chosen_model: string;
+    chosen_groups?: string[] | null;
     selection_reason: string;
     primary: string;
-    significance: Record<string, Boot>;
+    significance: Record<string, Boot | null>;
     ablation: Record<string, { features: string[]; delta_log_loss: Boot; delta_score_log_loss: Boot }>;
     additions: Record<string, { features: string[]; delta_log_loss: Boot; delta_score_log_loss: Boot }>;
     models: Record<string, BacktestModel>;

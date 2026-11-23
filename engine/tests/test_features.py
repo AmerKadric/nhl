@@ -12,7 +12,7 @@ FEATURE_PREFIXES = ("h_", "a_", "lg_")
 
 def _feature_cols(df: pd.DataFrame) -> list[str]:
     # the actual starter's identity/rating is by definition game-day info
-    skip = ("_gk_pid", "_gk", "_gk_recent", "_gk_n", "_gk_idle")
+    skip = ("_gk_pid", "_gk", "_gk_recent", "_gk_n", "_gk_idle", "_lu_gs_conf", "_lu_toi_conf")
     return [c for c in df.columns if c.startswith(FEATURE_PREFIXES) and not c.endswith(skip)]
 
 
@@ -24,7 +24,8 @@ def _truncate(fr: Frames, cut_id: int) -> Frames:
         g[c] = g[c].astype(object)
         g.loc[later, c] = None
     g.loc[later, "state"] = "FUT"
-    return Frames(g, fr.tgs[fr.tgs["game_id"] < cut_id], fr.ggs[fr.ggs["game_id"] < cut_id], fr.teams, fr.players)
+    return Frames(g, fr.tgs[fr.tgs["game_id"] < cut_id], fr.ggs[fr.ggs["game_id"] < cut_id], fr.teams, fr.players,
+                  fr.sgs[fr.sgs["game_id"] < cut_id])
 
 
 @pytest.fixture(scope="module")
@@ -71,7 +72,7 @@ def test_features_ignore_the_games_own_result(frames, full):
     g = frames.games.copy()
     m = g["id"] == target
     g.loc[m, ["home_score", "away_score", "home_reg_goals", "away_reg_goals"]] = [9, 0, 9, 0]
-    alt = FeatureBuilder(Frames(g, frames.tgs, frames.ggs, frames.teams, frames.players), FeatureParams()).run().set_index("game_id")
+    alt = FeatureBuilder(Frames(g, frames.tgs, frames.ggs, frames.teams, frames.players, frames.sgs), FeatureParams()).run().set_index("game_id")
     cols = _feature_cols(full)
     np.testing.assert_allclose(full.loc[target, cols].astype(float).values, alt.loc[target, cols].astype(float).values, atol=1e-12, equal_nan=True)
     # but the next games of those teams do change
@@ -125,3 +126,44 @@ def test_tuner_replicates_builder_likelihood(frames):
         assert n == fb.kf_ll[m][1]
         assert ll == pytest.approx(fb.kf_ll[m][0], rel=1e-10)
     assert tune.elo_loglik(arr["elo"], p.elo_k, p.elo_hfa, p.elo_carry, arr["n"], 0) == pytest.approx(fb.elo_ll[0] / fb.elo_ll[1], rel=1e-10)
+
+
+def test_lineup_features_respond_to_absences(frames):
+    """Removing a team's heaviest-used skaters from its latest game lowers
+    that team's lineup strength for its NEXT game, and nothing earlier."""
+    fb = FeatureBuilder(frames, FeatureParams())
+    base = fb.run().set_index("game_id")
+    assert {"h_lu_gs", "a_lu_toi", "h_lu_gs_conf"} <= set(base.columns)
+    g = frames.games.sort_values(["game_date", "id"])
+    team = 6
+    mine = g[(g["home_team_id"] == team) | (g["away_team_id"] == team)]
+    prev, nxt = mine.iloc[-2], mine.iloc[-1]
+    s = frames.sgs
+    top = (s[(s["game_id"] == prev["id"]) & (s["team_id"] == team)].sort_values("toi", ascending=False)["player_id"].head(4))
+    cut = s[~((s["game_id"] == prev["id"]) & s["player_id"].isin(top))]
+    alt = FeatureBuilder(Frames(frames.games, frames.tgs, frames.ggs, frames.teams, frames.players, cut), FeatureParams()).run().set_index("game_id")
+    side = "h" if nxt["home_team_id"] == team else "a"
+    assert alt.loc[nxt["id"], f"{side}_lu_toi"] < base.loc[nxt["id"], f"{side}_lu_toi"] - 1.0
+    earlier = [i for i in base.index if i < prev["id"]]
+    cols = [c for c in base.columns if "_lu_" in c and not c.endswith("_conf")]
+    np.testing.assert_allclose(base.loc[earlier, cols].astype(float).values, alt.loc[earlier, cols].astype(float).values, atol=1e-12)
+
+
+def test_healthy_unchanged_lineup_scores_zero():
+    """A team that always dresses the same skaters has no lineup deviation."""
+    import datetime as dt
+
+    from puckiq.features.lineups import LineupBuilder
+    games = pd.DataFrame([dict(id=2020020000 + i, game_date=dt.date(2020, 10, 1) + dt.timedelta(days=2 * i),
+                               start_time_utc=pd.Timestamp("2020-10-01") + pd.Timedelta(days=2 * i),
+                               home_team_id=1, away_team_id=2) for i in range(12)])
+    rows = []
+    for g in games.itertuples():
+        for tid in (1, 2):
+            for k in range(18):
+                rows.append(dict(game_id=g.id, team_id=tid, player_id=tid * 100 + k, position="D" if k >= 12 else "C",
+                                 toi=900.0, goals=0, assists=0, shots=2, plus_minus=0, pim=0))
+    out = LineupBuilder(games, pd.DataFrame(rows), {1: 1, 2: 2}).run().set_index("game_id")
+    last = out.iloc[-1]
+    assert abs(last["h_lu_toi"]) < 1e-9 and abs(last["a_lu_toi"]) < 1e-9
+    assert abs(last["h_lu_gs"]) < 1e-9 and abs(last["a_lu_gs"]) < 1e-9

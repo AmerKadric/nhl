@@ -13,7 +13,7 @@ import datetime as dt
 import itertools
 import math
 from collections import deque
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 import pandas as pd
@@ -21,6 +21,7 @@ import sqlalchemy as sa
 
 from .. import config, db
 from ..ingest.reference import TEAM_REF
+from .lineups import LINEUP_COLS, LineupBuilder
 from .params import FeatureParams, load_params
 
 METRICS = ("xg5", "xga", "g")
@@ -41,17 +42,52 @@ class Frames:
     ggs: pd.DataFrame
     teams: pd.DataFrame
     players: pd.DataFrame
+    sgs: pd.DataFrame = field(default_factory=pd.DataFrame)   # skater game lines
+
+
+def _read_frames(conn, min_game_id: int | None = None) -> dict[str, pd.DataFrame]:
+    def q(table, col):
+        stmt = sa.select(table)
+        if min_game_id is not None:
+            stmt = stmt.where(col >= min_game_id)
+        return pd.read_sql(stmt, conn)
+    return {"games": q(db.games, db.games.c.id), "tgs": q(db.team_game_stats, db.team_game_stats.c.game_id),
+            "ggs": q(db.goalie_game_stats, db.goalie_game_stats.c.game_id),
+            "sgs": q(db.skater_game_stats, db.skater_game_stats.c.game_id)}
 
 
 def load_frames() -> Frames:
+    """All data the feature pass needs.
+
+    Against a remote database, completed seasons never change, so they are
+    read once and kept in a local cache file; later runs fetch only the
+    current season. Game ids start with the season year, which makes the
+    split a simple id range."""
     with db.begin() as c:
-        games = pd.read_sql(sa.select(db.games), c)
-        tgs = pd.read_sql(sa.select(db.team_game_stats), c)
-        ggs = pd.read_sql(sa.select(db.goalie_game_stats), c)
         teams = pd.read_sql(sa.select(db.teams), c)
         players = pd.read_sql(sa.select(db.players), c)
+        season = c.execute(sa.select(sa.func.max(db.games.c.season))).scalar()
+        remote = c.dialect.name != "sqlite"
+        cache = config.CACHE_DIR / f"history_before_{season}.pkl"
+        hist = None
+        if remote and season and cache.exists():
+            try:
+                hist = pd.read_pickle(cache)
+            except Exception:   # unreadable cache (e.g. library upgrade): rebuild it
+                hist = None
+        if hist is not None:
+            cur = _read_frames(c, int(season) * 1_000_000)
+            parts = {k: pd.concat([hist[k], cur[k]], ignore_index=True) for k in cur}
+        else:
+            parts = _read_frames(c)
+            if remote and season:
+                cut_id = int(season) * 1_000_000
+                config.ensure_dirs()
+                pd.to_pickle({k: v[v["id" if k == "games" else "game_id"] < cut_id].reset_index(drop=True)
+                              for k, v in parts.items()}, cache)
+    games = parts["games"]
     games["game_date"] = pd.to_datetime(games["game_date"]).dt.date
-    return Frames(games, tgs, ggs, teams, players)
+    return Frames(games, parts["tgs"], parts["ggs"], teams, players, parts["sgs"])
 
 
 class TeamState:
@@ -397,6 +433,12 @@ class FeatureBuilder:
                 post(g)
 
         feat = pd.DataFrame(rows)
+        # lineup strength: its own day-batched pass over the same games
+        self.lineups = LineupBuilder(games, f.sgs, self.fr)
+        feat = feat.merge(self.lineups.run(), on="game_id", how="left")
+        for side in ("h", "a"):
+            for col in LINEUP_COLS:
+                feat[f"{side}_{col}"] = feat[f"{side}_{col}"].fillna(0.0)
         self.cands = pd.DataFrame(cand_rows)
         feat = attach_projected_goalies(feat, self.cands, p)
         # targets

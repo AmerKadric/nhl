@@ -15,16 +15,18 @@ PUCKIQ forecasts the final score of every NHL game with a statistical model, sho
 
 ## Results
 
-Walk-forward backtest on 12,228 games (2017–18 to 2026–27, the last season in progress). Each season is forecast by a model trained only on earlier seasons, using inputs built only from games played on earlier days.
+Walk-forward backtest on 12,247 games (2017–18 to 2026–27, the last season in progress). Each season is forecast by a model trained only on earlier seasons, using inputs built only from games played on earlier days.
 
 | Model | Winner accuracy | Log loss | Exact score |
 |---|---|---|---|
 | Home-ice baseline | 53.7% | 0.6905 | 6.8% |
-| Elo → goals | 58.4% | 0.6704 | 7.4% |
-| **PUCKIQ (projected goalies)** | **59.1%** | **0.6661** | **7.5%** |
+| Elo → goals | 58.4% | 0.6705 | 7.4% |
+| PUCKIQ without lineup inputs | 59.1% | 0.6662 | 7.5% |
+| **PUCKIQ (current model, projected goalies)** | **59.5%** | **0.6647** | **7.5%** |
 
 - The gain over both baselines is statistically significant (paired bootstrap, 95% interval).
-- On the three seasons held out from all modelling decisions (2024–25 onward, 3,150 games): 56.9% accuracy, 0.6721 log loss.
+- Lineup availability (who each team last dressed, weighted by ice time) was added after it significantly improved forecasts on the selection seasons.
+- On the seasons held out from all modelling decisions (2024–25 onward, 3,169 games): 56.8% accuracy, 0.6717 log loss. There the lineup input improved the score distribution but not winner accuracy (56.9% without it).
 - Gradient boosting (LightGBM), a blended model, separate five-on-five and special-teams ratings, and a spread calibration were all tested and rejected because they did not beat the simpler model.
 - This is a simulation. The record of forecasts actually published before games is tracked separately on the Accuracy page and is still short.
 
@@ -39,7 +41,7 @@ NHL APIs + MoneyPuck files
   relational store (SQLite locally, PostgreSQL in production)
         │  features: one chronological pass, a day at a time
         ▼
-  Kalman-filter team ratings · shrunk goalie ratings · starter projection
+  Kalman-filter team ratings · goalie ratings · starter projection · lineup availability
         │  Poisson rate model
         ▼
   20,000-game simulator (regulation → overtime → shootout)
@@ -57,7 +59,7 @@ NHL APIs + MoneyPuck files
 | `engine/puckiq/backtest` | Walk-forward backtest and metrics |
 | `engine/puckiq/pipeline` | Daily and refresh jobs, publishing, settlement |
 | `engine/puckiq/api` | HTTP API, including the scenario lab |
-| `engine/tests` | 53 tests: simulator rules, look-ahead leakage, settlement, API |
+| `engine/tests` | 60 tests: simulator rules, look-ahead leakage, lineups, settlement, API |
 | `web/` | Next.js 16 front end |
 | `artifacts/` | Tuned rating parameters and the backtest report |
 
@@ -106,6 +108,7 @@ Every job is idempotent. A failure in a critical feed aborts publishing; a stale
 - Both Vercel projects are connected to this repository: a push to `main` redeploys them.
 - The site reads `PUCKIQ_API_URL`; the API reads `DATABASE_URL` and `PUCKIQ_CORS_ORIGINS`. All are set in Vercel.
 - The pipeline reads the `DATABASE_URL` repository secret. Without it every run exits early.
+- Neon's free plan allows 5 GB of data transfer a month and suspends the database beyond that. To stay far below it, the pipeline caches completed seasons between runs, refresh runs skip the heavy work unless a game is about to start, the API serves precomputed summaries, and the site caches API reads for 20 seconds to a few minutes.
 - The API installs only the runtime dependencies. Tuning, backtesting, training and the pipeline need `engine[train]`.
 - To run a command against the hosted database from a workstation, set `DATABASE_URL` for that process (for example from `vercel env pull`) and never commit it.
 
@@ -116,13 +119,13 @@ Moving to another host: `engine/Dockerfile` builds the same API as a container, 
 | Source | Used for | Terms |
 |---|---|---|
 | [MoneyPuck](https://moneypuck.com/data.htm) | Expected goals and shot data | Free for non-commercial use with clear credit. Other uses need MoneyPuck's permission. |
-| NHL public APIs | Schedule, results, goalie logs, live state | Publicly accessible and undocumented; no published terms. Used read-only at low request rates. |
+| NHL public APIs | Schedule, results, goalie and skater game logs, live state | Publicly accessible and undocumented; no published terms. Used read-only at low request rates. |
 
 PUCKIQ must stay non-commercial (no ads, affiliate links or paid tiers) unless MoneyPuck grants permission. It is not affiliated with the NHL, its teams or MoneyPuck; team names and logos belong to their owners.
 
 ## Known limits
 
-- **No injuries or lineups.** No free, licensed feed exists in the sources above, so these are marked unavailable rather than guessed.
+- **No injury reports or game-day lineups.** No free, licensed feed exists in the sources above. The model sees only who dressed in each team's last game, so a new absence is invisible until the first game missed.
 - **Exact scores are mostly chance.** The most likely score is right about one game in thirteen.
 - **Goalie confirmation is untested live.** The code that reads confirmed starters from the NHL boxscore has not yet been observed against a real pre-game window.
 - **No in-game model.** Live scores are shown as observed; no live win probability is produced.

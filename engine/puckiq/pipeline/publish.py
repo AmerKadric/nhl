@@ -114,7 +114,36 @@ def confirmed_starters(game_id: int, state: str) -> dict:
     return out
 
 
-def build_summary(res: dict, gstate: str, freshness: dict) -> dict:
+def lineup_watch(fb: FeatureBuilder, team_id: int, names: dict[int, str], limit: int = 6) -> dict:
+    """Regular skaters who did not dress in the team's most recent game.
+    A statement of fact from box scores, not an injury report: the reason a
+    skater sat out is not known."""
+    lb = getattr(fb, "lineups", None)
+    if lb is None or not lb.by_game:
+        return {"available": False, "as_of": None, "absent": []}
+    t = lb.team(team_id)
+    absent = [dict(a, name=names.get(a["pid"], "Unknown")) for a in lb.absences(team_id)[:limit]]
+    return {"available": True, "as_of": t.last_date.isoformat() if t.last_date else None, "absent": absent}
+
+
+def lineup_snapshot(fb: FeatureBuilder, team_id: int, names: dict[int, str]) -> dict | None:
+    """The skaters a team last dressed, with the model's ice-time rating for
+    each, and the rating it gives an unknown replacement. Stored with the
+    forecast inputs so scenarios can be recomputed later."""
+    lb = getattr(fb, "lineups", None)
+    if lb is None or not lb.by_game:
+        return None
+    t = lb.team(team_id)
+    skaters = []
+    for pid in t.last:
+        pl = lb.players.get(pid)
+        skaters.append({"pid": pid, "name": names.get(pid, "Unknown"), "toi": round(lb.value(pid)[1], 2),
+                        "defence": bool(pl.d) if pl else False})
+    skaters.sort(key=lambda x: -x["toi"])
+    return {"skaters": skaters, "replacement": {"F": round(lb.lg_toi[0], 2), "D": round(lb.lg_toi[1], 2)}}
+
+
+def build_summary(res: dict, gstate: str, freshness: dict, lineups: dict | None = None) -> dict:
     sim = res["sim"]
     ml = sim.most_likely
     p_fav = max(sim.p_home_win, 1 - sim.p_home_win)
@@ -136,7 +165,8 @@ def build_summary(res: dict, gstate: str, freshness: dict) -> dict:
         "goalie_state": gstate,
         "exact_point": {"p_home_win": res["exact"].p_home_win, "lam_home": res["exact"].lam_home, "lam_away": res["exact"].lam_away},
         "data_freshness": freshness,
-        "availability": {"injuries": "unavailable", "lineups": "unavailable"},
+        "lineup_watch": lineups,
+        "availability": {"injuries": "unavailable", "lineups": "most recent dressed lineup only; confirmed game-day lineups unavailable"},
     }
 
 
@@ -180,11 +210,11 @@ def publish(fb: FeatureBuilder, feat: pd.DataFrame, days_ahead: int = 7, trigger
                         rosters[a] = set()
         confirmed = confirmed_starters(g.game_id, g.state) if use_network else {}
         goalies, gstate = goalie_options(fb, g.game_id, names, rosters, ab, confirmed)
-        h = input_hash(fc.version, row, goalies)
+        h = input_hash(fc.version, row, goalies, fc.glm.cols)
 
         with db.begin() as c:
             prev = c.execute(sa.select(db.forecasts.c.id, db.forecasts.c.version_no, db.forecasts.c.input_hash,
-                                       db.forecasts.c.goalie_state)
+                                       db.forecasts.c.goalie_state, db.forecasts.c.model_version_id)
                              .where(db.forecasts.c.game_id == g.game_id).order_by(db.forecasts.c.version_no.desc())).first()
         if prev is not None and prev.input_hash == h:
             continue
@@ -193,9 +223,17 @@ def publish(fb: FeatureBuilder, feat: pd.DataFrame, days_ahead: int = 7, trigger
         res = fc.forecast(row, goalies, seed=seed)
         sim = res["sim"]
         ml = sim.most_likely
-        reason = "initial" if prev is None else ("goalie_confirmed" if gstate != prev.goalie_state and gstate != "projected" else "inputs_changed")
+        if prev is None:
+            reason = "initial"
+        elif gstate != prev.goalie_state and gstate != "projected":
+            reason = "goalie_confirmed"
+        elif prev.model_version_id != model_id:
+            reason = "model_updated"
+        else:
+            reason = "inputs_changed"
         snap = {"row": {k: (None if isinstance(v, float) and np.isnan(v) else (v.isoformat() if isinstance(v, dt.date) else v))
-                        for k, v in row.items()}, "goalies": goalies}
+                        for k, v in row.items()}, "goalies": goalies,
+                "lineups": {"home": lineup_snapshot(fb, g.home_team_id, names), "away": lineup_snapshot(fb, g.away_team_id, names)}}
         with db.begin() as c:
             existing = c.execute(sa.select(db.feature_snapshots.c.id).where(
                 db.feature_snapshots.c.game_id == g.game_id, db.feature_snapshots.c.input_hash == h)).first()
@@ -210,7 +248,8 @@ def publish(fb: FeatureBuilder, feat: pd.DataFrame, days_ahead: int = 7, trigger
                 p_away_reg=sim.p_away_reg, p_overtime=sim.p_overtime, p_shootout=sim.p_shootout,
                 exp_home_goals=sim.exp_home_goals, exp_away_goals=sim.exp_away_goals, lam_home=sim.lam_home, lam_away=sim.lam_away,
                 ml_home_goals=ml[0], ml_away_goals=ml[1], ml_score_prob=ml[2], n_sims=sim.n_sims, seed=seed,
-                summary=build_summary(res, gstate, freshness),
+                summary=build_summary(res, gstate, freshness, {
+                    "home": lineup_watch(fb, g.home_team_id, names), "away": lineup_watch(fb, g.away_team_id, names)}),
             )).inserted_primary_key[0]
             c.execute(db.score_distributions.insert().values(
                 forecast_id=fid, max_goals=config.MAX_GOALS, final_matrix=np.round(sim.final, 5).tolist(),

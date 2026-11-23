@@ -47,13 +47,15 @@ jobs:
           python-version: "3.13"
           cache: pip
           cache-dependency-path: engine/pyproject.toml
-      - name: Restore downloaded source files
+      - name: Restore downloaded files and the completed-season cache
         if: steps.guard.outputs.configured == 'true'
         uses: actions/cache@v4
         with:
-          path: data/raw
-          key: raw-${{ github.run_id }}
-          restore-keys: raw-
+          path: |
+            data/raw
+            data/cache
+          key: data-${{ github.run_id }}
+          restore-keys: data-
       - run: pip install -e "engine[train]"
         if: steps.guard.outputs.configured == 'true'
       - name: Choose job
