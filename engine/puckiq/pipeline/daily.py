@@ -20,6 +20,7 @@ import sqlalchemy as sa
 
 from .. import config, db
 from ..backtest import walkforward
+from .. import market
 from ..features.build import FeatureBuilder, build_all
 from ..ingest import moneypuck, nhl
 from ..models.forecaster import Forecaster
@@ -108,7 +109,8 @@ def store_site_documents(season: int) -> int:
     report = backtest_report()
     if report:
         db.put_document("backtest_public", q.public_backtest(report))
-    return 3 if report else 2
+    db.put_document("market_benchmark", market.benchmark())
+    return 4 if report else 3
 
 
 SEASON_SIMS = 20000
@@ -217,6 +219,7 @@ def run_daily(retrain: bool | None = None, days_ahead: int = 7) -> dict:
         _step(report, "backtest_report", lambda: seed_backtest_report() + seed_season_validation())
         _step(report, "games", lambda: nhl.ingest_games([season]), critical=True)
         _step(report, "schedule", lambda: nhl.sync_schedule(today - dt.timedelta(days=3), weeks=3), critical=True)
+        _step(report, "market_odds", market.ingest)
         _step(report, "goalie_logs", lambda: nhl.ingest_goalie_logs([season], since=today - dt.timedelta(days=14)))
         _step(report, "skater_logs", lambda: nhl.ingest_skater_logs([season], since=today - dt.timedelta(days=10)))
         # only this season's rows change, so only they are rewritten
@@ -254,6 +257,7 @@ def run_refresh(days_ahead: int = 2) -> dict:
     try:
         _step(report, "schedule", lambda: nhl.sync_schedule(today - dt.timedelta(days=1), weeks=1), critical=True)
         finalized = _step(report, "scores", lambda: sum(nhl.finalize_from_scoreboard(d) for d in (today - dt.timedelta(days=1), today)))
+        _step(report, "market_odds", market.ingest)
         fresh = freshness()
         report["freshness"] = fresh
         # Rebuilding features and re-forecasting is only worthwhile when a

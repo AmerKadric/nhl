@@ -13,6 +13,7 @@ PUCKIQ forecasts the final score of every NHL game with a statistical model, sho
 - Lets you re-run a matchup in the Prediction Lab with a different goalie or schedule situation.
 - Publishes forecasts as append-only versions and scores every one automatically after the game.
 - Simulates the rest of the season every day for projected standings, playoff odds and Stanley Cup odds.
+- Records pre-game betting odds from the NHL feed and scores the model against the market on the same games. The model never uses them and individual prices are not displayed.
 
 ## Results
 
@@ -77,7 +78,7 @@ NHL APIs + MoneyPuck files
 | `engine/puckiq/backtest` | Walk-forward backtest and metrics |
 | `engine/puckiq/pipeline` | Daily and refresh jobs, publishing, settlement |
 | `engine/puckiq/api` | HTTP API, including the scenario lab |
-| `engine/tests` | 70 tests: simulator rules, look-ahead leakage, lineups, season simulation, summaries, settlement, API |
+| `engine/tests` | 73 tests: simulator rules, look-ahead leakage, lineups, season simulation, summaries, market benchmark, settlement, API |
 | `web/` | Next.js 16 front end |
 | `artifacts/` | Tuned rating parameters and the backtest report |
 
@@ -140,7 +141,7 @@ Moving to another host: `engine/Dockerfile` builds the same API as a container, 
 | Source | Used for | Terms |
 |---|---|---|
 | [MoneyPuck](https://moneypuck.com/data.htm) | Expected goals and shot data | Free for non-commercial use with clear credit. Other uses need MoneyPuck's permission. |
-| NHL public APIs | Schedule, results, goalie and skater game logs, live state | Publicly accessible and undocumented; no published terms. Used read-only at low request rates. |
+| NHL public APIs | Schedule, results, goalie and skater game logs, live state, partner sportsbook odds (benchmark only) | Publicly accessible and undocumented; no published terms. Used read-only at low request rates. |
 
 PUCKIQ must stay non-commercial (no ads, affiliate links or paid tiers) unless MoneyPuck grants permission. It is not affiliated with the NHL, its teams or MoneyPuck; team names and logos belong to their owners.
 
@@ -150,4 +151,4 @@ PUCKIQ must stay non-commercial (no ads, affiliate links or paid tiers) unless M
 - **Exact scores are mostly chance.** The most likely score is right about one game in thirteen.
 - **Goalie confirmation is untested live.** The code that reads confirmed starters from the NHL boxscore has not yet been observed against a real pre-game window.
 - **No in-game model.** Live scores are shown as observed; no live win probability is produced.
-- **Not benchmarked against betting markets**, and not betting advice.
+- **The market benchmark is new.** Odds are only available on the day of a game, so the comparison started on 23 November 2026 and needs a few hundred games before it means anything. Nothing here is betting advice.

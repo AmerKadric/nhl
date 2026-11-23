@@ -160,6 +160,23 @@ goalie_status = Table(
     Index("ix_goalie_status_game", "game_id", "team_id", "observed_at"),
 )
 
+# Pre-game betting odds from the NHL feed, kept only to benchmark the model.
+# Append-only snapshots: one row per game, provider, market and side.
+market_odds = Table(
+    "market_odds", metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("game_id", Integer, ForeignKey("games.id"), nullable=False),
+    Column("provider", String(40), nullable=False),
+    Column("market", String(4), nullable=False),      # ML2 ML3 PL OU
+    Column("side", String(6), nullable=False),        # home away draw over under
+    Column("line", Float),                            # total or puck line, where the market has one
+    Column("american", Float, nullable=False),
+    Column("observed_at", DateTime, nullable=False),
+    Column("source_updated_at", DateTime, nullable=False),
+    Index("ix_market_odds_game", "game_id", "provider", "observed_at"),
+    Index("ix_market_odds_stamp", "provider", "source_updated_at"),
+)
+
 # Reserved for a licensed injury / lineup feed. No such source is integrated;
 # the table stays empty and the API reports availability data as unavailable.
 availability_reports = Table(

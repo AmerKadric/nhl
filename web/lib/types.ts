@@ -260,7 +260,21 @@ export type BacktestDetail = BacktestModel & {
   by_confidence: ConfBin[];
 };
 
+export type MarketScore = { accuracy: number; log_loss: number; brier: number };
+
+export type MarketBlock = {
+  n: number;
+  puckiq: MarketScore;
+  market: MarketScore;
+  log_loss_diff: number;
+  log_loss_diff_se: number | null;
+  median_minutes_before: number;
+  mean_abs_gap: number;
+  totals?: { n: number; puckiq_brier: number; market_brier: number; over_rate: number };
+};
+
 export type Accuracy = {
+  market?: { generated_at: string; games_with_odds: number; providers: string[]; latest: MarketBlock | null; first: MarketBlock | null } | null;
   forward: {
     first_forecast_at: string | null;
     games_pending: number;

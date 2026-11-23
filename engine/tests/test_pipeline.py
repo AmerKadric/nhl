@@ -428,3 +428,89 @@ def test_lab_missing_skater_scenario(published, monkeypatch):
     fc.domain["lu_toi"] = [snap["row"]["h_lu_toi"] - drop / 2, 1e6]
     assert c.post(f"/v1/games/{gid}/lab", json={"home_out": [top["pid"]]}).status_code == 422      # outside validated range
     queries.clear_cache()
+
+
+# --- market benchmark ------------------------------------------------------------
+def _feed(game_id, home=-205.0, away=170.0, over=114.0, under=-135.0, stamp="2021-12-27T15:00:00Z", name="DraftKings"):
+    return {"lastUpdatedUTC": stamp, "bettingPartner": {"name": name}, "games": [{
+        "gameId": game_id,
+        "homeTeam": {"odds": [{"description": "MONEY_LINE_3_WAY", "value": 330.0, "qualifier": "Draw"},
+                              {"description": "MONEY_LINE_3_WAY", "value": -120.0, "qualifier": ""},
+                              {"description": "OVER_UNDER", "value": over, "qualifier": "O6.5"},
+                              {"description": "MONEY_LINE_2_WAY", "value": home, "qualifier": ""},
+                              {"description": "PUCK_LINE", "value": 124.0, "qualifier": "-1.5"},
+                              {"description": "SOMETHING_NEW", "value": 1.0, "qualifier": ""}]},
+        "awayTeam": {"odds": [{"description": "MONEY_LINE_3_WAY", "value": 330.0, "qualifier": "Draw"},
+                              {"description": "MONEY_LINE_3_WAY", "value": 220.0, "qualifier": ""},
+                              {"description": "OVER_UNDER", "value": under, "qualifier": "U6.5"},
+                              {"description": "MONEY_LINE_2_WAY", "value": away, "qualifier": ""},
+                              {"description": "PUCK_LINE", "value": -148.0, "qualifier": "+1.5"}]}}]}
+
+
+def test_odds_conversion_and_parsing():
+    from puckiq import market
+    assert market.implied(100) == pytest.approx(0.5) and market.implied(-200) == pytest.approx(2 / 3) and market.implied(150) == pytest.approx(0.4)
+    assert market.no_vig(-110, -110) == pytest.approx(0.5)
+    assert market.no_vig(-205, 170) + market.no_vig(170, -205) == pytest.approx(1.0)
+    assert market.no_vig(-205, 170) < market.implied(-205)          # removing the margin lowers the favourite's figure
+    provider, stamp, rows = market.parse_partner_games(_feed(7))
+    assert provider == "draftkings" and stamp == dt.datetime(2021, 12, 27, 15, 0)
+    key = {(r["market"], r["side"]): r for r in rows}
+    assert len(rows) == 9                                           # the draw price appears once; unknown markets are ignored
+    assert key[("ML2", "home")]["american"] == -205 and key[("ML2", "away")]["american"] == 170
+    assert key[("OU", "over")]["line"] == 6.5 and key[("OU", "under")]["american"] == -135
+    assert key[("PL", "home")]["line"] == -1.5 and key[("PL", "away")]["line"] == 1.5
+    assert ("ML3", "draw") in key
+
+
+def test_odds_are_recorded_once_and_only_before_puck_drop(published, monkeypatch):
+    from puckiq import market
+    gid = published["upcoming"][1]            # still unplayed, starts two hours after the fixture's "now"
+    start = published["now"] + dt.timedelta(hours=2)
+
+    class Fake:
+        def get_json(self, url, params=None):
+            return _feed(gid) if url.endswith("/US/now") else _feed(gid, name="FanDuel", home=-210.0, away=172.0)
+    monkeypatch.setattr(market, "client", lambda: Fake())
+    with db.begin() as c:
+        c.execute(db.market_odds.delete())
+    assert market.ingest(now=published["now"]) == 18              # two providers x nine rows
+    assert market.ingest(now=published["now"] + dt.timedelta(minutes=5)) == 0   # same feed timestamp: nothing new
+    assert market.ingest(now=start + dt.timedelta(minutes=1)) == 0             # the game has started
+    with db.begin() as c:
+        assert c.execute(sa.select(sa.func.count()).select_from(db.market_odds)).scalar() == 18
+
+
+def test_market_benchmark_scores_both_on_the_same_games(published):
+    """A market that priced every winner at 90% must beat any honest forecast."""
+    from puckiq import market
+    with db.begin() as c:
+        c.execute(db.market_odds.delete())
+        done = c.execute(sa.select(db.games.c.id, db.games.c.home_score, db.games.c.away_score, db.games.c.start_time_utc)
+                         .join(db.evaluations, db.evaluations.c.game_id == db.games.c.id)
+                         .where(db.games.c.home_score.isnot(None)).distinct()).fetchall()
+        assert len(done) >= 2
+        rows = []
+        for g in done:
+            home_won = g.home_score > g.away_score
+            when = g.start_time_utc - dt.timedelta(minutes=20)
+            for side, price in (("home", -900.0 if home_won else 900.0), ("away", 900.0 if home_won else -900.0)):
+                rows.append(dict(game_id=g.id, provider="testbook", market="ML2", side=side, line=None, american=price, observed_at=when, source_updated_at=when))
+            over = g.home_score + g.away_score > 5.5
+            for side, price in (("over", -300.0 if over else 300.0), ("under", 300.0 if over else -300.0)):
+                rows.append(dict(game_id=g.id, provider="testbook", market="OU", side=side, line=5.5, american=price, observed_at=when, source_updated_at=when))
+        # a later, post-game price must be ignored
+        g = done[0]
+        rows.append(dict(game_id=g.id, provider="testbook", market="ML2", side="home", line=None, american=100.0,
+                         observed_at=g.start_time_utc + dt.timedelta(hours=1), source_updated_at=g.start_time_utc + dt.timedelta(hours=1)))
+        c.execute(db.market_odds.insert(), rows)
+    b = market.benchmark()
+    blk = b["latest"]
+    assert b["providers"] == ["testbook"] and blk["n"] == len(done)
+    assert blk["market"]["accuracy"] == 1.0
+    assert blk["market"]["log_loss"] == pytest.approx(-np.log(0.9), abs=1e-6)
+    assert blk["log_loss_diff"] > 0                                 # positive: the market was better
+    assert blk["median_minutes_before"] == pytest.approx(20.0)
+    assert blk["totals"]["n"] == len(done) and blk["totals"]["market_brier"] == pytest.approx(0.0625)
+    assert 0 <= blk["totals"]["puckiq_brier"] <= 1
+    assert b["first"]["n"] == len(done)

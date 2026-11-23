@@ -287,7 +287,8 @@ def lab(game_id: int, body: LabRequest):
 
 @app.get("/v1/accuracy")
 def accuracy():
-    return {"forward": q.forward_record(), "model_versions": q.model_versions(), "backtest": q.backtest_public()}
+    return {"forward": q.forward_record(), "model_versions": q.model_versions(), "backtest": q.backtest_public(),
+            "market": q.market_benchmark()}
 
 
 @app.get("/v1/accuracy/history")

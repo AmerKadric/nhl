@@ -51,7 +51,7 @@ export default function Page() {
             ["No injury reports or game-day lineups.", "There is no free, licensed injury feed. The model only knows who dressed in each team's last game, so a new absence is invisible until the first game missed, and it never knows why a player sat or whether he returns tonight. In testing, confirmed game-day lineups would have helped a little more."],
             ["Goalie news arrives late.", "Starters are confirmed shortly before puck drop. In the backtest, knowing the confirmed starter did not measurably improve accuracy over the projection, but individual games can still move."],
             ["No in-game probabilities.", "Live scores are shown as observed facts. There is no validated in-game model, so no live win probability is displayed."],
-            ["Markets are not used.", "The model is independent of betting odds and has not been benchmarked against them. Nothing here is betting advice."],
+            ["Markets are not inputs.", "The model never sees betting odds. They are recorded before each game only to score the model against them, and that comparison is on the Accuracy page. Nothing here is betting advice."],
             ["The past is not a promise.", "Backtest results are a simulation. The published record on the Accuracy page is the real test, and it is still short."],
           ].map(([h, body]) => (
             <li key={h} className="panel px-4 py-3">

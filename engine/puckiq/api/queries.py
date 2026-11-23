@@ -357,6 +357,11 @@ def backtest_public() -> dict | None:
     return cached("backtest_public", 1800, load)
 
 
+def market_benchmark() -> dict | None:
+    """PUCKIQ against the betting market on the same games (precomputed)."""
+    return cached("market_benchmark", 600, lambda: db.get_document("market_benchmark"))
+
+
 def backtest_primary() -> str:
     """Model whose backtest rows are shown: the chosen model with projected
     goalies, i.e. what was knowable well before each game."""

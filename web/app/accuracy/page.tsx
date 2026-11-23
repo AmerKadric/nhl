@@ -6,7 +6,7 @@ import { CalibrationChart, ConfidenceChart, SeasonLines } from "@/components/cha
 import { Chip, PageSkeleton, Section, Stat, TeamLogo, Unavailable } from "@/components/ui";
 import { apiCached } from "@/lib/api";
 import { fx, GROUP_NAMES, MODEL_NAMES, pct, seasonLabel, stampET } from "@/lib/format";
-import type { Accuracy, Boot, History, Metrics, TeamsResponse } from "@/lib/types";
+import type { Accuracy, Boot, History, MarketBlock, Metrics, TeamsResponse } from "@/lib/types";
 
 export const metadata: Metadata = { title: "Model accuracy" };
 
@@ -110,6 +110,39 @@ async function Body({ searchParams }: { searchParams: PageProps<"/accuracy">["se
                 </div>
               )}
             </div>
+          </>
+        )}
+      </Section>
+
+      {/* ---- market benchmark ---- */}
+      <Section
+        id="market"
+        eyebrow="The hardest benchmark"
+        title="Against the betting market"
+        note="Betting odds are the strongest public forecast of a hockey game. PUCKIQ does not use them: they are recorded before each game only so the two can be scored on exactly the same games."
+        aside={<Chip tone="ice">Live record</Chip>}
+      >
+        {!acc.market || (!acc.market.latest && !acc.market.first) ? (
+          <Unavailable title="No finished game has both a published forecast and recorded odds yet.">
+            {acc.market && acc.market.games_with_odds > 0
+              ? `Odds have been recorded for ${acc.market.games_with_odds} ${acc.market.games_with_odds === 1 ? "game" : "games"} so far. `
+              : "Recording starts with the next slate. "}
+            The comparison appears here once those games finish. Nothing is shown in its place.
+          </Unavailable>
+        ) : (
+          <>
+            <div className="grid gap-4 lg:grid-cols-2">
+              {acc.market.latest && <MarketPanel title="Last odds before puck drop" b={acc.market.latest} />}
+              {acc.market.first && <MarketPanel title="First odds of the day" b={acc.market.first} />}
+            </div>
+            <ul className="mt-3 space-y-1 text-xs leading-relaxed text-mute">
+              <li>
+                Odds come from two of the NHL&apos;s sportsbook partners through the NHL&apos;s own feed, converted to probabilities with the bookmaker&apos;s margin removed.
+                Individual prices are not shown.
+              </li>
+              <li>Late odds reflect confirmed goalies, lineups and injury news that PUCKIQ does not have, so matching them would be a strong result, not the expected one.</li>
+              <li>This is a measure of forecast quality, not betting advice.</li>
+            </ul>
           </>
         )}
       </Section>
@@ -383,6 +416,54 @@ async function Body({ searchParams }: { searchParams: PageProps<"/accuracy">["se
         </div>
       </Section>
     </>
+  );
+}
+
+function MarketPanel({ title, b }: { title: string; b: MarketBlock }) {
+  const hrs = b.median_minutes_before / 60;
+  const when = hrs >= 1.5 ? `${hrs.toFixed(0)} hours` : `${b.median_minutes_before.toFixed(0)} minutes`;
+  const se = b.log_loss_diff_se;
+  const clear = se != null && Math.abs(b.log_loss_diff) > 1.96 * se;
+  const verdict = !clear ? "No clear difference yet" : b.log_loss_diff < 0 ? "PUCKIQ ahead" : "Market ahead";
+  return (
+    <div className="panel overflow-x-auto p-5">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <div className="eyebrow">{title}</div>
+        <span className="num text-xs text-mute">
+          {b.n.toLocaleString("en-US")} games · odds recorded a median of {when} before the start
+        </span>
+      </div>
+      <table className="mt-3 w-full text-sm">
+        <thead className="text-left text-xs uppercase tracking-wider text-mute">
+          <tr className="border-b border-line">
+            {["", "Winners", "Log loss", "Brier"].map((h) => (
+              <th key={h} className="py-2 pr-3 font-semibold">{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {([["PUCKIQ", b.puckiq], ["Betting market", b.market]] as const).map(([name, m]) => (
+            <tr key={name} className="border-b border-line-soft last:border-0">
+              <td className="py-2 pr-3 text-ink-2">{name}</td>
+              <td className="num py-2 pr-3 text-ink">{pct(m.accuracy, 1)}</td>
+              <td className="num py-2 pr-3 text-ink">{m.log_loss.toFixed(4)}</td>
+              <td className="num py-2 pr-3 text-ink-2">{m.brier.toFixed(4)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p className="mt-3 text-sm text-ink-2">
+        <strong className="text-ink">{verdict}.</strong> PUCKIQ&apos;s log loss is {Math.abs(b.log_loss_diff).toFixed(4)} {b.log_loss_diff < 0 ? "lower (better)" : "higher (worse)"}
+        {se != null ? `, give or take ${(1.96 * se).toFixed(4)}` : ""}. The two differ by {(b.mean_abs_gap * 100).toFixed(1)} points of win probability on a typical game.
+        {b.n < 200 && <span className="text-warn"> With {b.n} games this says very little.</span>}
+      </p>
+      {b.totals && (
+        <p className="mt-2 text-xs text-mute">
+          Over/under on the posted total ({b.totals.n} games): Brier {b.totals.puckiq_brier.toFixed(4)} for PUCKIQ, {b.totals.market_brier.toFixed(4)} for the market; lower is
+          better and 0.25 is a coin flip.
+        </p>
+      )}
+    </div>
   );
 }
 
