@@ -5,6 +5,7 @@ import { Suspense } from "react";
 
 import { GameCard } from "@/components/GameCard";
 import { RatingChart } from "@/components/interactive";
+import { OddsHistoryChart } from "@/components/OddsHistory";
 import { Chip, PageSkeleton, Section, Stat, TeamLogo, Unavailable } from "@/components/ui";
 import { apiCached } from "@/lib/api";
 import { fx, odds, onDark, pct, recordStr, seasonLabel, signed } from "@/lib/format";
@@ -122,6 +123,14 @@ async function Team({ params }: { params: PageProps<"/teams/[abbrev]">["params"]
           ) : (
             <Unavailable title="This team's playoff run is over." />
           )}
+        </Section>
+      )}
+
+      {d.odds_history && (
+        <Section id="odds-trend" eyebrow="Season outlook" title="How the odds have moved">
+          <div className="panel p-5">
+            <OddsHistoryChart history={d.odds_history} color={color} />
+          </div>
         </Section>
       )}
 

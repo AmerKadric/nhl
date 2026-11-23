@@ -47,6 +47,8 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("season-sim", help="simulate the rest of the season and store the result")
     sub.add_parser("season-backtest", help="validate the season simulation against past seasons")
     sub.add_parser("playoff-backtest", help="validate playoff series odds against past playoffs")
+    p = sub.add_parser("season-history", help="reconstruct the odds history for days before the simulation was published")
+    p.add_argument("--every", type=int, default=1, help="days between reconstructed points")
     p = sub.add_parser("copy-db", help="copy all tables from another database into DATABASE_URL")
     p.add_argument("--from", dest="source", required=True, help="source SQLAlchemy URL, e.g. sqlite:///data/puckiq.db")
     p.add_argument("--tables", help="comma-separated table names; default is every table")
@@ -115,6 +117,10 @@ def main(argv: list[str] | None = None) -> int:
         from .sim.season import STRENGTH_SD_SCALE
         out = sb.run((backtest_report() or {}).get("chosen_groups"), scale=STRENGTH_SD_SCALE)
         print(json.dumps(out["summary"]["overall"], indent=1))
+    elif args.cmd == "season-history":
+        from .api import queries as q
+        from .pipeline.daily import backfill_season_history
+        print(json.dumps(backfill_season_history(q.meta()["season"], args.every), indent=1))
     elif args.cmd == "playoff-backtest":
         from .backtest import playoffs as pb
         from .pipeline.daily import backtest_report

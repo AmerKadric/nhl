@@ -179,6 +179,7 @@ export type GameDetail = {
   rating_ranges: RatingRanges;
   goalie_matchup: { home: GoalieMatchup[]; away: GoalieMatchup[] } | null;
   lab: LabInfo | null;
+  stakes?: (StakeGame & { date: string }) | null;
 };
 
 export type LabMini = {
@@ -358,6 +359,7 @@ export type TeamPage = {
   forward_history: HistoryRow[];
   backtest_history: HistoryRow[];
   outlook?: (SeasonTeam & Partial<PlayoffTeam>) | null;
+  odds_history?: OddsHistory | null;
 };
 
 export type SeasonTeam = {
@@ -393,6 +395,36 @@ export type SeasonValidationBlock = {
   champion_mean_prob: number;
   champion_uniform_prob: number;
   n_champions: number;
+};
+
+/** One team's playoff odds depending on the result of one game. `se` is the
+ * standard error of `swing` from the simulation. */
+export type StakeSide = { team_id: number; team?: TeamBrief | null; now: number; if_win: number; if_loss: number; swing: number; se: number };
+export type StakeGame = { game_id: number | null; p_home_win: number; home: StakeSide; away: StakeSide };
+export type Stakes = { date: string; method?: "adjusted" | "raw"; games: StakeGame[] };
+
+type LeverageScore = { rmse: number; slope: number; mean_predicted_winners: number; mean_predicted_losers: number };
+/** Predicted stakes against the actual next-morning move in odds, this season. */
+export type LeverageCheck = {
+  n: number;
+  days?: number;
+  first_day?: string;
+  last_day?: string;
+  mean_actual_winners?: number;
+  mean_actual_losers?: number;
+  rmse_no_change?: number;
+  adjusted?: LeverageScore;
+  raw?: LeverageScore;
+};
+
+/** A team's simulated odds on each day; days up to `reconstructed_through`
+ * were computed after the fact, not published at the time. */
+export type OddsHistory = {
+  dates: string[];
+  reconstructed_through?: string | null;
+  p_playoffs: (number | null)[];
+  p_cup: (number | null)[];
+  proj_points: (number | null)[];
 };
 
 export type PlayoffSeries = {
@@ -436,6 +468,7 @@ export type PlayoffValidation = {
 export type SeasonOutlook = {
   season: number;
   playoff_validation?: PlayoffValidation | null;
+  leverage_validation?: LeverageCheck | null;
   simulation: {
     phase?: "regular" | "awaiting_bracket" | "playoffs" | "complete";
     season: number;
@@ -445,8 +478,9 @@ export type SeasonOutlook = {
     n_sims: number;
     games_remaining: number;
     teams: SeasonTeam[];
+    stakes?: Stakes | null;
   } | null;
-  history: { dates: string[]; teams: Record<string, { p_playoffs: (number | null)[]; p_cup: number[]; proj_points: (number | null)[] }> } | null;
+  history: { dates: string[]; reconstructed_through?: string | null; teams: Record<string, { p_playoffs: (number | null)[]; p_cup: (number | null)[]; proj_points: (number | null)[] }> } | null;
   validation: {
     generated_at: string;
     seasons: number[];

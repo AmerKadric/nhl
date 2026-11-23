@@ -461,12 +461,33 @@ def season_outlook(season: int) -> dict:
             tm = teams_map()
             for t in sim["teams"]:
                 t["team"] = _team_brief(t["team_id"]) if t["team_id"] in tm else None
+            for g in (sim.get("stakes") or {}).get("games") or []:
+                for side in ("home", "away"):
+                    g[side]["team"] = _team_brief(g[side]["team_id"]) if g[side]["team_id"] in tm else None
             for sr in sim.get("series") or []:
                 sr["top_team"] = _team_brief(sr["top"]) if sr["top"] in tm else None
                 sr["bottom_team"] = _team_brief(sr["bottom"]) if sr["bottom"] in tm else None
         return {"season": season, "simulation": sim, "history": db.get_document(f"season_sim_history:{season}"),
-                "validation": db.get_document("season_sim_validation"), "playoff_validation": db.get_document("playoff_validation")}
+                "validation": db.get_document("season_sim_validation"), "playoff_validation": db.get_document("playoff_validation"),
+                "leverage_validation": db.get_document("leverage_validation")}
     return cached(f"season_outlook:{season}", 600, load)
+
+
+def game_stakes(season: int, game_id: int) -> dict | None:
+    """What this game means for each side's playoff odds, if it is on the
+    slate the latest season simulation looked at."""
+    stakes = ((season_outlook(season).get("simulation") or {}).get("stakes")) or {}
+    g = next((x for x in stakes.get("games") or [] if x["game_id"] == game_id), None)
+    return None if g is None else {"date": stakes["date"], **g}
+
+
+def team_odds_history(season: int, team_id: int) -> dict | None:
+    """One team's daily playoff odds, Cup odds and projected points."""
+    hist = season_outlook(season).get("history")
+    t = (hist or {}).get("teams", {}).get(str(team_id))
+    if not t or len(hist["dates"]) < 2:
+        return None
+    return {"dates": hist["dates"], "reconstructed_through": hist.get("reconstructed_through"), **t}
 
 
 # --- teams -------------------------------------------------------------------

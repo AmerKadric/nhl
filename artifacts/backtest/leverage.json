@@ -1,0 +1,23 @@
+{
+ "generated_at": "2026-11-23T20:49:52+00:00",
+ "n": 754,
+ "days": 54,
+ "first_day": "2026-09-29",
+ "last_day": "2026-11-22",
+ "mean_actual_winners": 0.03539416445623342,
+ "mean_actual_losers": -0.0331212201591512,
+ "rmse_no_change": 0.04506276009611602,
+ "adjusted": {
+  "rmse": 0.029371126499570167,
+  "slope": 1.6699848333641198,
+  "mean_predicted_winners": 0.019894648013592125,
+  "mean_predicted_losers": -0.01996663855816539
+ },
+ "raw": {
+  "rmse": 0.025819047429021094,
+  "slope": 0.8358411934850905,
+  "mean_predicted_winners": 0.040580664185596006,
+  "mean_predicted_losers": -0.04017532046107462
+ },
+ "season": 2026
+}

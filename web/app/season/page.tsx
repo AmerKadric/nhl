@@ -4,6 +4,7 @@ import { connection } from "next/server";
 import { Suspense } from "react";
 
 import { Bracket } from "@/components/Bracket";
+import { MoversSection, StakesSection } from "@/components/Stakes";
 import { Chip, PageSkeleton, Section, Stat, TeamLogo, Unavailable } from "@/components/ui";
 import { apiCached } from "@/lib/api";
 import { odds, pct, recordStr, seasonLabel, stampET } from "@/lib/format";
@@ -137,7 +138,6 @@ async function Outlook() {
   const study = grid
     ? { raw: grid.find((g) => g.scale === 1), used: grid.find((g) => g.scale === v?.strength_sd_scale), fit: v!.scale_study!.fit_seasons.length }
     : null;
-  const days = hist?.dates.length ?? 0;
 
   return (
     <>
@@ -158,6 +158,10 @@ async function Outlook() {
           </span>
         </div>
       )}
+
+      {sim.phase !== "awaiting_bracket" && sim.stakes && <StakesSection stakes={sim.stakes} check={d.leverage_validation} />}
+
+      {hist && <MoversSection history={hist} teams={teams} />}
 
       <Section id="cup" eyebrow="Stanley Cup" title="Most likely champions" note="Even the favourite is far more likely to lose than to win: sixteen teams play four rounds of best-of-seven.">
         <div className="panel p-5">
@@ -271,12 +275,6 @@ async function Outlook() {
           </>
         )}
       </Section>
-
-      {days > 0 && (
-        <p className="mt-6 text-xs text-mute">
-          A snapshot of these odds is stored each day ({days} so far this season), so how each team&apos;s chances moved will be chartable as the season goes on.
-        </p>
-      )}
     </>
   );
 }

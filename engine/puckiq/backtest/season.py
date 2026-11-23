@@ -169,3 +169,85 @@ def summarise(d: pd.DataFrame) -> dict:
             cal.append({"lo": lo, "hi": min(hi, 1.0), "n": int(m.sum()), "mean_pred": float(p[m].mean()), "observed": float(y[m].mean())})
     return {"overall": block(d), "by_checkpoint": {k: block(v) for k, v in d.groupby("checkpoint")},
             "by_season": {str(k): block(v) for k, v in d.groupby("season")}, "calibration": cal}
+
+
+def reconstruct_history(season: int, groups: list[str] | None, before: dt.date, every: int = 1, n_sims: int = 20000) -> dict:
+    """What the season simulation would have said on each earlier morning of
+    `season`, for dates before the first one it was actually published.
+
+    Each date is treated exactly like a backtest checkpoint: results, box
+    scores and lineups from that date on are hidden, features are rebuilt and
+    the model is retrained from what was known. These are reconstructions,
+    not forecasts that were on the site at the time, and are stored and
+    labelled as such."""
+    fr = load_frames()
+    al = S.alignment_from_teams(fr.teams)
+    reg = fr.games[(fr.games["season"] == season) & (fr.games["game_type"] == config.REGULAR)]
+    day = reg["game_date"].min()
+    dates, teams, stakes = [], {}, {}
+    while day < before:
+        tr = truncate(fr, day)
+        feat = FeatureBuilder(tr).run()
+        fc = Forecaster.train(feat, groups)
+        inp = S.prepare(feat, tr.games, fc, season, al)
+        if inp is not None:
+            inp.sd_off, inp.sd_def = inp.sd_off * S.STRENGTH_SD_SCALE, inp.sd_def * S.STRENGTH_SD_SCALE
+            track = S.next_slate(inp)
+            out, detail = S.simulate_detail(inp, n_sims=n_sims, seed=int(day.strftime("%Y%m%d")), track=track)
+            if detail is not None and inp.game_dates[track[0]] == day:      # games played that very day
+                stakes[str(day)] = {"raw": S.leverage(inp, detail, adjusted=False), "adjusted": S.leverage(inp, detail, adjusted=True)}
+            dates.append(str(day))
+            for r in out.itertuples():
+                h = teams.setdefault(str(int(r.team_id)), {"p_playoffs": [], "p_cup": [], "proj_points": []})
+                h["p_playoffs"].append(round(float(r.p_playoffs), 4))
+                h["p_cup"].append(round(float(r.p_cup), 4))
+                h["proj_points"].append(round(float(r.proj_points), 1))
+            log.info("reconstructed %s", day)
+        day += dt.timedelta(days=every)
+    return {"dates": dates, "teams": teams, "stakes": stakes}
+
+
+def leverage_check(dates: list[str], teams: dict, stakes: dict, games: pd.DataFrame) -> dict:
+    """Did the stakes shown for a game match what then happened to the odds?
+
+    For every game with stakes on day D and a simulation on day D+1, the
+    predicted move for each team (odds if it won, or if it lost, minus its
+    odds that morning) is compared with the actual move in its odds by the
+    next morning. Other results that night also move a team's odds, which
+    adds scatter but no bias. Both ways of splitting the simulation are
+    scored so the better one can be chosen on evidence."""
+    idx = {d: i for i, d in enumerate(dates)}
+    res = games.set_index("id")[["home_score", "away_score"]]
+    rows = []
+    for day, both in stakes.items():
+        nxt = str(dt.date.fromisoformat(day) + dt.timedelta(days=1))
+        if day not in idx or nxt not in idx:
+            continue
+        raw = {g["game_id"]: g for g in both["raw"]}
+        for g in both["adjusted"]:
+            gid = g["game_id"]
+            if gid not in res.index or pd.isna(res.at[gid, "home_score"]):
+                continue                                           # postponed or not played
+            home_won = res.at[gid, "home_score"] > res.at[gid, "away_score"]
+            for side, won in (("home", home_won), ("away", not home_won)):
+                a, r = g[side], raw[gid][side]
+                h = teams.get(str(a["team_id"]))
+                if not h or h["p_playoffs"][idx[day]] is None or h["p_playoffs"][idx[nxt]] is None:
+                    continue
+                rows.append({"won": bool(won), "actual": h["p_playoffs"][idx[nxt]] - h["p_playoffs"][idx[day]],
+                             "adjusted": (a["if_win"] if won else a["if_loss"]) - a["now"],
+                             "raw": (r["if_win"] if won else r["if_loss"]) - r["now"]})
+    d = pd.DataFrame(rows)
+    if d.empty:
+        return {"n": 0}
+
+    def score(col: str) -> dict:
+        x, y = d[col], d["actual"]
+        return {"rmse": float(np.sqrt(((y - x) ** 2).mean())), "slope": float((x * y).sum() / (x * x).sum()),
+                "mean_predicted_winners": float(x[d["won"]].mean()), "mean_predicted_losers": float(x[~d["won"]].mean())}
+
+    return {"generated_at": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"), "n": int(len(d)), "days": int(len(stakes)),
+            "first_day": min(stakes), "last_day": max(stakes),
+            "mean_actual_winners": float(d.loc[d["won"], "actual"].mean()), "mean_actual_losers": float(d.loc[~d["won"], "actual"].mean()),
+            "rmse_no_change": float(np.sqrt((d["actual"] ** 2).mean())),
+            "adjusted": score("adjusted"), "raw": score("raw")}

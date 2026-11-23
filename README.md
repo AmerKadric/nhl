@@ -13,6 +13,7 @@ PUCKIQ forecasts the final score of every NHL game with a statistical model, sho
 - Lets you re-run a matchup in the Prediction Lab with a different goalie or schedule situation.
 - Publishes forecasts as append-only versions and scores every one automatically after the game.
 - Simulates the rest of the season every day for projected standings, playoff odds and Stanley Cup odds.
+- Shows what each of tonight's games means for the playoff race (each team's odds with a win against a loss), the week's biggest movers, and every team's odds day by day since opening night.
 - Switches to playoff mode by itself when the regular season ends: the Season page becomes the bracket, with odds on every live series from its current score and each remaining team's odds round by round.
 - Records pre-game betting odds from the NHL feed and scores the model against the market on the same games. The model never uses them and individual prices are not displayed.
 
@@ -45,6 +46,17 @@ Checked by re-running the simulation as of December 1 and February 1 in 7 past s
 | Teams given 70–90% to make the playoffs | made it 82% of the time (77 cases) |
 | Final points, average miss | 6.3 points |
 | Actual points inside the 80% range | 81% of the time |
+
+### Game stakes
+
+Checked against 754 team-games of the 2026-27 season so far, by re-running the simulation each morning with later data hidden and comparing the stated swing with the actual move in a team's playoff odds by the next morning:
+
+| | Stated | Actual |
+|---|---|---|
+| Teams that won | +4.1 points | +3.5 points |
+| Teams that lost | −4.0 points | −3.3 points |
+
+The figures run about 18% high. A version that removed the "a win means the team is better" effect was tested and rejected: it ran 40% low, because team ratings really do move after a game.
 
 ### Playoff series odds
 
@@ -92,7 +104,7 @@ NHL APIs + MoneyPuck files
 | `engine/puckiq/backtest` | Walk-forward backtest and metrics |
 | `engine/puckiq/pipeline` | Daily and refresh jobs, publishing, settlement |
 | `engine/puckiq/api` | HTTP API, including the scenario lab |
-| `engine/tests` | 79 tests: simulator rules, look-ahead leakage, lineups, season simulation, playoff bracket and series odds, summaries, market benchmark, settlement, API |
+| `engine/tests` | 82 tests: simulator rules, look-ahead leakage, lineups, season simulation, game stakes, playoff bracket and series odds, summaries, market benchmark, settlement, API |
 | `web/` | Next.js 16 front end |
 | `artifacts/` | Tuned rating parameters and the backtest report |
 
@@ -125,6 +137,7 @@ npm run dev                                              # site on http://localh
 | `puckiq season-sim` | Simulate the rest of the season and store the result (also part of `daily`) |
 | `puckiq season-backtest` | Validate the season simulation against past seasons |
 | `puckiq playoff-backtest` | Validate playoff series and Cup odds against past playoffs |
+| `puckiq season-history` | Reconstruct the odds history for days before the simulation was published (stored labelled as reconstructed) and re-check game stakes |
 | `puckiq tune` | Re-tune rating parameters on pre-2017 seasons only |
 | `puckiq status` | Data freshness for each feed |
 | `puckiq copy-db --from <url>` | Copy every table from another database into `DATABASE_URL` |

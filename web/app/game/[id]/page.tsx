@@ -7,6 +7,7 @@ import { CompareBars, type CompareRow, DriverBars, OutcomeBar } from "@/componen
 import { StaleBanner } from "@/components/Chrome";
 import { DistBars, ScoreMatrix } from "@/components/interactive";
 import { Lab } from "@/components/Lab";
+import { GameStakes } from "@/components/Stakes";
 import { LocalTime } from "@/components/LocalTime";
 import { Chip, PageSkeleton, Section, Stat, TeamLogo, Unavailable } from "@/components/ui";
 import { apiCached } from "@/lib/api";
@@ -170,6 +171,18 @@ async function Matchup({ params }: { params: PageProps<"/game/[id]">["params"] }
               </div>
             </div>
           </Section>
+
+          {d.stakes && (
+            <Section
+              id="stakes"
+              eyebrow="Playoff race"
+              title="What this game means"
+              note="Each team's chance of making the playoffs in the simulated seasons where it wins this game, against those where it loses. From the daily season simulation; swings within its noise are not reported."
+              aside={<Link href="/season#stakes" className="text-sm text-ice hover:underline">All of the day&apos;s games</Link>}
+            >
+              <GameStakes g={d.stakes} />
+            </Section>
+          )}
 
           {/* C — why */}
           <Section

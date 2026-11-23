@@ -130,13 +130,16 @@ def run_season_sim(feat, fb: FeatureBuilder, season: int, n_sims: int = SEASON_S
     inp.sd_off, inp.sd_def = inp.sd_off * season_sim.STRENGTH_SD_SCALE, inp.sd_def * season_sim.STRENGTH_SD_SCALE
     today = dt.datetime.now(ET).date()
     seed = int(today.strftime("%Y%m%d"))
-    out = season_sim.simulate(inp, n_sims=n_sims, seed=seed)
+    track = season_sim.next_slate(inp)
+    out, detail = season_sim.simulate_detail(inp, n_sims=n_sims, seed=seed, track=track)
+    stakes = {"date": str(inp.game_dates[track[0]]), "method": "adjusted" if season_sim.LEVERAGE_ADJUSTED else "raw",
+              "games": season_sim.leverage(inp, detail, adjusted=season_sim.LEVERAGE_ADJUSTED)} if len(track) else None
     through = max(d for d, sc in zip(fb.f.games["game_date"], fb.f.games["home_score"]) if sc is not None and sc == sc)
     teams = [{k: (v.item() if hasattr(v, "item") else v) for k, v in r.items()} for r in out.to_dict("records")]
     db.put_document(f"season_sim:{season}", {
         "phase": "regular", "season": season, "generated_at": db.utcnow().isoformat(timespec="seconds"), "results_through": str(through),
         "model_version": fc.version, "n_sims": n_sims, "seed": seed, "games_remaining": int(len(inp.home)),
-        "strength_sd_scale": season_sim.STRENGTH_SD_SCALE, "teams": teams})
+        "strength_sd_scale": season_sim.STRENGTH_SD_SCALE, "teams": teams, "stakes": stakes})
     hist = db.get_document(f"season_sim_history:{season}") or {"dates": [], "teams": {}}
     day = str(today)
     if hist["dates"] and hist["dates"][-1] == day:      # re-run on the same day replaces that day's line
@@ -151,7 +154,43 @@ def run_season_sim(feat, fb: FeatureBuilder, season: int, n_sims: int = SEASON_S
         h["p_cup"].append(round(t["p_cup"], 4))
         h["proj_points"].append(round(t["proj_points"], 1))
     db.put_document(f"season_sim_history:{season}", hist)
-    return {"status": "ok", "teams": len(teams), "games_remaining": int(len(inp.home))}
+    return {"status": "ok", "teams": len(teams), "games_remaining": int(len(inp.home)),
+            "stakes_games": len(stakes["games"]) if stakes else 0}
+
+
+def backfill_season_history(season: int, every: int = 1) -> dict:
+    """Fill in the odds history for the part of the season before the daily
+    simulation started publishing, by reconstruction (see
+    backtest.season.reconstruct_history). Published days are never touched;
+    the document records where reconstruction ends so the site can say so."""
+    from ..backtest.season import reconstruct_history
+    key = f"season_sim_history:{season}"
+    hist = db.get_document(key) or {"dates": [], "teams": {}}
+    cut = hist.get("reconstructed_through")
+    keep = [i for i, d in enumerate(hist["dates"]) if cut is None or d > cut]      # the published days
+    published = [hist["dates"][i] for i in keep]
+    before = dt.date.fromisoformat(published[0]) if published else dt.datetime.now(ET).date()
+    rec = reconstruct_history(season, (backtest_report() or {}).get("chosen_groups"), before, every)
+    if not rec["dates"]:
+        return {"status": "nothing to reconstruct"}
+    teams = {}
+    for tid in sorted(set(rec["teams"]) | set(hist["teams"])):
+        teams[tid] = {}
+        for name in ("p_playoffs", "p_cup", "proj_points"):
+            old = hist["teams"].get(tid, {}).get(name, [None] * len(hist["dates"]))
+            teams[tid][name] = rec["teams"].get(tid, {}).get(name, [None] * len(rec["dates"])) + [old[i] for i in keep]
+    dates = rec["dates"] + published
+    db.put_document(key, {"dates": dates, "teams": teams, "reconstructed_through": rec["dates"][-1]})
+    from ..backtest.season import leverage_check
+    from ..features.build import load_frames
+    check = leverage_check(dates, teams, rec["stakes"], load_frames().games)
+    check["season"] = season
+    p = config.ARTIFACT_DIR / "backtest"
+    p.mkdir(parents=True, exist_ok=True)
+    (p / "leverage.json").write_text(json.dumps(check, indent=1))
+    db.put_document("leverage_validation", check)
+    return {"status": "ok", "reconstructed": len(rec["dates"]), "published": len(published), "from": rec["dates"][0], "to": rec["dates"][-1],
+            "leverage_check": check}
 
 
 def playoff_document(inp, out: dict, season: int, model_version: str, n_sims: int, seed: int, through) -> dict:
@@ -249,6 +288,19 @@ def seed_season_validation() -> int:
     return 1
 
 
+def seed_leverage_validation() -> int:
+    """Same for the check of game stakes against what then happened."""
+    p = config.ARTIFACT_DIR / "backtest" / "leverage.json"
+    if not p.exists():
+        return 0
+    committed = json.loads(p.read_text())
+    stored = db.get_document("leverage_validation")
+    if stored is not None and stored.get("generated_at") == committed.get("generated_at"):
+        return 0
+    db.put_document("leverage_validation", committed)
+    return 1
+
+
 def seed_playoff_validation() -> int:
     """Same for the playoff-mode validation report."""
     p = config.ARTIFACT_DIR / "backtest" / "playoffs.json"
@@ -284,7 +336,7 @@ def run_daily(retrain: bool | None = None, days_ahead: int = 7) -> dict:
     today = dt.datetime.now(ET).date()
     try:
         _step(report, "reference", lambda: (nhl.seed_reference(), nhl.ingest_teams())[1], critical=True)
-        _step(report, "backtest_report", lambda: seed_backtest_report() + seed_season_validation() + seed_playoff_validation())
+        _step(report, "backtest_report", lambda: seed_backtest_report() + seed_season_validation() + seed_playoff_validation() + seed_leverage_validation())
         _step(report, "games", lambda: nhl.ingest_games([season]), critical=True)
         _step(report, "schedule", lambda: nhl.sync_schedule(today - dt.timedelta(days=3), weeks=3), critical=True)
         _step(report, "market_odds", market.ingest)

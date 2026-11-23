@@ -39,6 +39,16 @@ HOME_GAMES = (0, 1, 4, 6)   # best-of-seven, 2-2-1-1-1: games hosted by the high
 # of the playoff odds unchanged. `puckiq season-backtest` re-runs the study.
 STRENGTH_SD_SCALE = 2.0
 
+# How a game's stakes are computed (see simulate_detail). The strength-balanced
+# split looked like the more honest one on paper, but the check in
+# backtest/season.py::leverage_check said otherwise. Over 754 team-games of
+# 2026-27, odds moved +3.5 points for winners and -3.3 for losers by the next
+# morning; the raw split had said about 4.0 either way (18% high, RMSE 0.0258)
+# and the balanced one about 2.0 (40% low, RMSE 0.0294). A result really is
+# evidence about a team, and the ratings move on it. artifacts/backtest/
+# leverage.json holds the numbers; `puckiq season-history` re-runs the check.
+LEVERAGE_ADJUSTED = False
+
 
 # --------------------------------------------------------------------------
 # small numeric helpers
@@ -142,6 +152,9 @@ class SeasonInputs:
     log_lam_home: np.ndarray
     log_lam_away: np.ndarray
     sp: SimParams = field(default_factory=SimParams)
+    # identity of each remaining game, for per-game questions (what does tonight mean?)
+    game_ids: np.ndarray | None = None
+    game_dates: np.ndarray | None = None
 
 
 def current_standings(games: pd.DataFrame, team_ids: list[int]) -> dict[str, np.ndarray]:
@@ -217,13 +230,15 @@ def prepare(feat: pd.DataFrame, games: pd.DataFrame, fc, season: int, alignment:
     return SeasonInputs(
         team_ids=team_ids, conference=[alignment[t][0] for t in team_ids], division=[alignment[t][1] for t in team_ids],
         home=home, away=away, lam_home=lam_h, lam_away=lam_a, sd_off=sd_off, sd_def=sd_def,
-        log_lam_home=llh, log_lam_away=lla, sp=fc.sp, **st)
+        log_lam_home=llh, log_lam_away=lla, sp=fc.sp, game_ids=fut["game_id"].to_numpy(),
+        game_dates=fut["game_date"].to_numpy(), **st)
 
 
 # --------------------------------------------------------------------------
 # simulation
 # --------------------------------------------------------------------------
-def _regular_season(rng, inp: SeasonInputs, off: np.ndarray, dfn: np.ndarray) -> dict[str, np.ndarray]:
+def _regular_season(rng, inp: SeasonInputs, off: np.ndarray, dfn: np.ndarray, track: np.ndarray | None = None,
+                    reg_grid: tuple[np.ndarray, np.ndarray] | None = None) -> dict[str, np.ndarray]:
     sp = inp.sp
     h_i, a_i = inp.home, inp.away
     lh = inp.lam_home[None, :] * np.exp(off[:, h_i] + dfn[:, a_i])
@@ -252,6 +267,9 @@ def _regular_season(rng, inp: SeasonInputs, off: np.ndarray, dfn: np.ndarray) ->
         return home_part.astype(np.float32) @ hm + away_part.astype(np.float32) @ am
 
     return {
+        "home_win": None if track is None else home_win[:, track],
+        # the home side's chance of winning each tracked game given this simulated season's team strengths
+        "p_home": None if track is None else interp_win(*reg_grid, np.log(lh[:, track]), np.log(la[:, track])),
         "pts": tally(2 * home_win + (tie & ~home_win), 2 * (~home_win) + (tie & home_win)),
         "rw": tally(h > a, a > h),
         "row": tally((h > a) | (tie & ~so & home_win), (a > h) | (tie & ~so & ~home_win)),
@@ -261,8 +279,32 @@ def _regular_season(rng, inp: SeasonInputs, off: np.ndarray, dfn: np.ndarray) ->
 
 
 def simulate(inp: SeasonInputs, n_sims: int = 10000, seed: int = 0, batch: int = 1000) -> pd.DataFrame:
+    return simulate_detail(inp, n_sims, seed, batch)[0]
+
+
+def simulate_detail(inp: SeasonInputs, n_sims: int = 10000, seed: int = 0, batch: int = 1000,
+                    track: np.ndarray | None = None) -> tuple[pd.DataFrame, dict | None]:
+    """The season simulation, plus (for the games whose indices are in
+    `track`) how often every team made the playoffs in the simulated seasons
+    where the home side won that game and in those where it lost. Tracking
+    draws no random numbers, so the odds are the same with or without it.
+
+    Two tallies are kept. The raw one simply splits the simulated seasons by
+    the game's result. A season in which a team wins tonight is also, on
+    average, one in which it was drawn stronger for the whole year, so the raw
+    split combines the value of the two points with what the result says
+    about the team. The adjusted tally weights each season by the inverse of
+    the chance its result had given that season's strengths, which makes the
+    winning and losing groups alike in strength and leaves only the points.
+    Which one is published is decided by LEVERAGE_ADJUSTED, on evidence."""
     rng = np.random.default_rng(seed)
     n = len(inp.team_ids)
+    if track is not None and len(track) == 0:
+        track = None
+    k = 0 if track is None else len(track)
+    made_win, made_loss, n_win = np.zeros((k, n)), np.zeros((k, n)), np.zeros(k)
+    adj_win, adj_loss, w_win, w_loss = np.zeros((k, n)), np.zeros((k, n)), np.zeros(k), np.zeros(k)
+    reg_grid = win_prob_grid(inp.sp, playoff=False) if track is not None else None
     conf = np.array(inp.conference)
     div = np.array(inp.division)
     xs, grid = win_prob_grid(inp.sp, playoff=True)
@@ -277,7 +319,7 @@ def simulate(inp: SeasonInputs, n_sims: int = 10000, seed: int = 0, batch: int =
         rows = np.arange(b)
         off = rng.normal(0.0, 1.0, (b, n)) * inp.sd_off
         dfn = rng.normal(0.0, 1.0, (b, n)) * inp.sd_def
-        sim = _regular_season(rng, inp, off, dfn)
+        sim = _regular_season(rng, inp, off, dfn, track, reg_grid)
         pts = inp.pts + sim["pts"]
         key = (pts * 1e9 + (inp.rw + sim["rw"]) * 1e7 + (inp.row + sim["row"]) * 1e5 + (inp.w + sim["w"]) * 1e3
                + (inp.gf - inp.ga + sim["gd"] + 500.0) + rng.random((b, n)) * 0.5)
@@ -294,6 +336,7 @@ def simulate(inp: SeasonInputs, n_sims: int = 10000, seed: int = 0, batch: int =
             return np.where(better, x, y), np.where(better, y, x)
 
         champs = []
+        made = np.zeros((b, n), dtype=np.float32)      # 1 where a team made the playoffs in that simulated season
         for c in sorted(set(conf)):
             divs = sorted(set(div[conf == c]))
             top, rest = [], []
@@ -308,8 +351,11 @@ def simulate(inp: SeasonInputs, n_sims: int = 10000, seed: int = 0, batch: int =
             for t in top:
                 bump("playoffs", t)
                 bump("division", t[:, 0])
+                made[rows[:, None], t] = 1.0
             bump("playoffs", wc1)
             bump("playoffs", wc2)
+            made[rows, wc1] = 1.0
+            made[rows, wc2] = 1.0
             a1, b1 = top[0][:, 0], top[1][:, 0]
             a_better = key[rows, a1] >= key[rows, b1]
             # the better division winner draws the second wild card
@@ -329,6 +375,17 @@ def simulate(inp: SeasonInputs, n_sims: int = 10000, seed: int = 0, batch: int =
             champs.append(cw)
         cup = series(*by_record(champs[0], champs[1]))
         bump("cup", cup)
+        if track is not None:
+            hw = sim["home_win"].astype(np.float32)        # [b, tracked games]
+            made_win += hw.T @ made
+            made_loss += (1.0 - hw).T @ made
+            n_win += hw.sum(axis=0)
+            p = np.clip(sim["p_home"], 0.05, 0.95)
+            ww, wl = hw / p, (1.0 - hw) / (1.0 - p)
+            adj_win += ww.T @ made
+            adj_loss += wl.T @ made
+            w_win += ww.sum(axis=0)
+            w_loss += wl.sum(axis=0)
 
     allp = np.concatenate(points, axis=0)
     out = pd.DataFrame({
@@ -338,8 +395,49 @@ def simulate(inp: SeasonInputs, n_sims: int = 10000, seed: int = 0, batch: int =
         "proj_points": allp.mean(axis=0), "points_p10": np.percentile(allp, 10, axis=0),
         "points_p50": np.percentile(allp, 50, axis=0), "points_p90": np.percentile(allp, 90, axis=0),
     })
-    for k, v in counts.items():
-        out[f"p_{k}"] = v / n_sims
+    for name, v in counts.items():
+        out[f"p_{name}"] = v / n_sims
+    detail = None if track is None else {"track": np.asarray(track), "n_sims": n_sims, "n_win": n_win,
+                                         "made_win": made_win, "made_loss": made_loss,
+                                         "adj_win": adj_win, "adj_loss": adj_loss, "w_win": w_win, "w_loss": w_loss}
+    return out, detail
+
+
+def next_slate(inp: SeasonInputs) -> np.ndarray:
+    """Indices of the games on the first date that still has games to play."""
+    if inp.game_dates is None or len(inp.game_dates) == 0:
+        return np.array([], dtype=int)
+    return np.flatnonzero(inp.game_dates == inp.game_dates.min())
+
+
+def leverage(inp: SeasonInputs, detail: dict | None, adjusted: bool = LEVERAGE_ADJUSTED) -> list[dict]:
+    """What each tracked game means for the two teams playing it: playoff
+    odds if the team wins that game against odds if it loses. `adjusted`
+    chooses the strength-balanced tally (see simulate_detail); the raw split
+    is kept for comparison. `se` is the standard error of the difference, so
+    a swing smaller than about twice that is simulation noise, not a finding."""
+    if detail is None:
+        return []
+    n = detail["n_sims"]
+    mw, ml = (detail["adj_win"], detail["adj_loss"]) if adjusted else (detail["made_win"], detail["made_loss"])
+    out = []
+    for j, gi in enumerate(detail["track"]):
+        nw = float(detail["n_win"][j])
+        nl = n - nw
+        if nw < 1 or nl < 1:
+            continue
+        dw, dl = (float(detail["w_win"][j]), float(detail["w_loss"][j])) if adjusted else (nw, nl)
+        now = (detail["made_win"][j] + detail["made_loss"][j]) / n
+        h, a = int(inp.home[gi]), int(inp.away[gi])
+
+        def side(t: int, p_if_win: float, n_if_win: float, p_if_loss: float, n_if_loss: float) -> dict:
+            se = math.sqrt(p_if_win * (1 - p_if_win) / n_if_win + p_if_loss * (1 - p_if_loss) / n_if_loss)
+            return {"team_id": int(inp.team_ids[t]), "now": float(now[t]), "if_win": p_if_win, "if_loss": p_if_loss,
+                    "swing": p_if_win - p_if_loss, "se": se}
+
+        out.append({"game_id": None if inp.game_ids is None else int(inp.game_ids[gi]), "p_home_win": nw / n,
+                    "home": side(h, float(mw[j][h] / dw), nw, float(ml[j][h] / dl), nl),
+                    "away": side(a, float(ml[j][a] / dl), nl, float(mw[j][a] / dw), nw)})
     return out
 
 

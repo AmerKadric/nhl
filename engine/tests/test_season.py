@@ -116,3 +116,64 @@ def test_current_standings_follow_nhl_points_rules():
     assert st["w"].tolist() == [1.0, 1.0, 1.0]
     assert st["otl"].tolist() == [2.0, 0.0, 0.0] and st["l"].tolist() == [0.0, 1.0, 0.0]
     assert st["gp"].tolist() == [3.0, 2.0, 1.0]
+
+
+def test_tracking_a_game_does_not_change_the_odds():
+    inp = league(strength=np.linspace(-0.15, 0.15, 24))
+    plain = S.simulate(inp, 2000, seed=11)
+    tracked, detail = S.simulate_detail(inp, 2000, seed=11, track=np.array([0, 5, 40]))
+    pd.testing.assert_frame_equal(plain, tracked)
+    assert detail["made_win"].shape == (3, 24)
+    assert S.simulate_detail(inp, 500, seed=1)[1] is None and S.leverage(inp, None) == []
+
+
+def test_leverage_is_coherent_and_a_win_helps():
+    """Late in a tight race: every team level on points with two games left
+    against each opponent's neighbour, so one result moves the odds a lot."""
+    n = 24
+    inp = league(points=np.full(n, 80.0))
+    keep = np.arange(0, len(inp.home), 12)                     # thin the schedule: few games left, each matters
+    inp.home, inp.away, inp.lam_home, inp.lam_away = inp.home[keep], inp.away[keep], inp.lam_home[keep], inp.lam_away[keep]
+    inp.game_ids = 9000 + np.arange(len(keep))
+    inp.game_dates = np.array([0] * 3 + [1] * (len(keep) - 3))
+    track = S.next_slate(inp)
+    assert list(track) == [0, 1, 2]
+    out, detail = S.simulate_detail(inp, 12000, seed=3, track=track)
+    lev = S.leverage(inp, detail, adjusted=False)
+    assert [g["game_id"] for g in lev] == [9000, 9001, 9002]
+    p = out.set_index("team_id")["p_playoffs"]
+    for g in lev:
+        for side, p_win in (("home", g["p_home_win"]), ("away", 1 - g["p_home_win"])):
+            x = g[side]
+            # the two conditional odds average back to the team's overall odds
+            assert p_win * x["if_win"] + (1 - p_win) * x["if_loss"] == pytest.approx(x["now"], abs=1e-9)
+            assert x["now"] == pytest.approx(p[x["team_id"]], abs=1e-9)
+            assert x["swing"] > 4 * x["se"] > 0                # winning clearly helps
+            assert 0 <= x["if_loss"] < x["if_win"] <= 1
+        assert 0.4 < g["p_home_win"] < 0.7
+
+
+def test_adjusted_leverage_removes_the_strength_guess():
+    """With very uncertain team strength, the seasons a team wins tonight are
+    the seasons it was drawn strong, so the raw split is worth more than the
+    two points alone. The adjusted split must be smaller, still positive, and
+    equal to the raw one when strength is known exactly."""
+    n = 24
+
+    def run(sd):
+        inp = league(points=np.full(n, 40.0))
+        inp.sd_off, inp.sd_def = np.full(n, sd), np.full(n, sd)
+        inp.game_ids = np.arange(len(inp.home))
+        inp.game_dates = np.array([0] + [1] * (len(inp.home) - 1))
+        _, detail = S.simulate_detail(inp, 12000, seed=8, track=S.next_slate(inp))
+        return S.leverage(inp, detail, adjusted=False)[0], S.leverage(inp, detail, adjusted=True)[0], detail
+
+    raw, adj, detail = run(0.15)
+    for side in ("home", "away"):
+        assert raw[side]["swing"] > adj[side]["swing"] + 3 * raw[side]["se"]
+        assert adj[side]["swing"] > 0
+    # the weights are an unbiased split: each group's total weight is the number of simulated seasons
+    assert detail["w_win"][0] == pytest.approx(12000, rel=0.03) and detail["w_loss"][0] == pytest.approx(12000, rel=0.03)
+    raw0, adj0, _ = run(0.0)
+    for side in ("home", "away"):
+        assert adj0[side]["swing"] == pytest.approx(raw0[side]["swing"], abs=1e-6)

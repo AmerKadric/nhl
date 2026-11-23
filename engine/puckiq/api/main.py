@@ -158,7 +158,8 @@ def game(game_id: int):
     gs = q.goalie_season(g["season"])
     out = {"game": card, "forecast": None, "versions": [], "evaluation": None,
            "comparison": {"home": tab.get(g["home_team_id"]), "away": tab.get(g["away_team_id"])},
-           "rating_ranges": q.league_rating_ranges(g["season"]), "goalie_matchup": None, "lab": None}
+           "rating_ranges": q.league_rating_ranges(g["season"]), "goalie_matchup": None, "lab": None,
+           "stakes": q.game_stakes(g["season"], game_id) if card["result"] is None else None}
     if detail:
         out.update(forecast=detail["forecast"], versions=detail["versions"], evaluation=detail["evaluation"])
         out["forecast"]["headline"] = (card["forecast"] or {}).get("headline")
@@ -336,5 +337,6 @@ def team(abbrev: str):
             "rating_ranges": q.league_rating_ranges(season), "rating_history": q.rating_history(t["id"], season),
             "goalies": q.team_goalies(t["id"], season), "upcoming": upcoming, "recent": recent, "games_remaining": int(remaining or 0),
             "outlook": next((x for x in ((q.season_outlook(season)["simulation"] or {}).get("teams") or []) if x["team_id"] == t["id"]), None),
+            "odds_history": q.team_odds_history(season, t["id"]),
             "forward_history": q.history("forward", season, t["id"], 20, 0)["rows"],
             "backtest_history": q.history("backtest", season, t["id"], 20, 0)["rows"]}
