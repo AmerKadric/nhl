@@ -140,7 +140,7 @@ def _game_card(g: dict, f: dict | None, ev: dict | None, mv: dict[int, str]) -> 
         "live": None,
         "forecast": _forecast_card(f, mv, teams_map()[g["home_team_id"]]["abbrev"], teams_map()[g["away_team_id"]]["abbrev"]),
         "evaluation": ev and {"winner_correct": bool(ev["winner_correct"]), "exact_score_hit": bool(ev["exact_score_hit"]),
-                              "p_actual_score": ev["p_actual_score"], "log_loss": ev["log_loss"]},
+                              "p_actual_score": ev["p_actual_score"], "log_loss": ev["log_loss"], "provisional": False},
     }
 
 

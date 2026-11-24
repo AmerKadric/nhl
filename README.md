@@ -104,7 +104,7 @@ NHL APIs + MoneyPuck files
 | `engine/puckiq/backtest` | Walk-forward backtest and metrics |
 | `engine/puckiq/pipeline` | Daily and refresh jobs, publishing, settlement |
 | `engine/puckiq/api` | HTTP API, including the scenario lab |
-| `engine/tests` | 82 tests: simulator rules, look-ahead leakage, lineups, season simulation, game stakes, playoff bracket and series odds, summaries, market benchmark, settlement, API |
+| `engine/tests` | 83 tests: simulator rules, look-ahead leakage, lineups, season simulation, game stakes, playoff bracket and series odds, summaries, market benchmark, settlement, provisional grading, API |
 | `web/` | Next.js 16 front end |
 | `artifacts/` | Tuned rating parameters and the backtest report |
 
@@ -158,6 +158,8 @@ Every job is idempotent. A failure in a critical feed aborts publishing; a stale
 - The site reads `PUCKIQ_API_URL`; the API reads `DATABASE_URL` and `PUCKIQ_CORS_ORIGINS`. All are set in Vercel.
 - The pipeline reads the `DATABASE_URL` repository secret. Without it every run exits early.
 - The repository is public, so the pipeline's GitHub Actions minutes are free. While it was private the scheduled runs were refused once the account's Actions budget was used up, and nothing updated. GitHub turns off scheduled workflows in a public repository after 60 days without repository activity; re-enable `pipeline` on the Actions tab if that happens over the summer.
+- Live and final scores are read from the NHL scoreboard by the API itself, so they appear even when the pipeline is late. A final the pipeline has not settled yet is graded on the fly with the settlement rule and marked provisional; it joins the track record only when the pipeline settles it.
+- If a forecast game is still ungraded twelve hours after puck drop, every page shows a banner saying the scheduled update is overdue and when data was last updated, and `/health` reports `degraded`.
 - When a pipeline run fails, the workflow opens an issue titled "PUCKIQ pipeline run failed" (or comments on the open one), so GitHub emails the repository owner. The daily job also fails if any single step failed, even when forecasts were still published.
 - Neon's free plan allows 5 GB of data transfer a month and suspends the database beyond that. To stay far below it, the pipeline caches completed seasons between runs, refresh runs skip the heavy work unless a game is about to start, the API serves precomputed summaries, and the site caches API reads for 20 seconds to a few minutes.
 - The API installs only the runtime dependencies. Tuning, backtesting, training and the pipeline need `engine[train]`.

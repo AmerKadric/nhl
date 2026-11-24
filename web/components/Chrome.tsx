@@ -3,7 +3,7 @@ import { connection } from "next/server";
 import { Suspense } from "react";
 
 import { apiCached } from "@/lib/api";
-import { stampET } from "@/lib/format";
+import { dayLabel, stampET } from "@/lib/format";
 import type { Meta } from "@/lib/types";
 
 import { Logo, Mark } from "./Brand";
@@ -41,6 +41,7 @@ async function DataStatus() {
   if (!meta) return null;
   const stale = meta.freshness.stale;
   if (!meta.model) return <StatusPill tone="warn" text="No model published" />;
+  if (meta.freshness.ungraded_games) return <StatusPill tone="warn" text="Update overdue" />;
   if (stale.length) return <StatusPill tone="warn" text={`Stale data: ${stale.map((s) => s.replace(/_/g, " ")).join(", ")}`} />;
   return <StatusPill tone="good" text={`Data current · checked ${stampET(meta.freshness.checked_at + "Z")}`} />;
 }
@@ -55,7 +56,8 @@ function StatusPill({ tone, text }: { tone: "good" | "warn" | "bad"; text: strin
   );
 }
 
-/** Shown wherever forecasts appear if any upstream feed is stale. */
+/** Shown on every page when the scheduled update has not run or a feed is
+ * stale, so out-of-date numbers are never presented as current. */
 export async function StaleBanner() {
   let meta: Meta | null = null;
   await connection();
@@ -64,9 +66,24 @@ export async function StaleBanner() {
   } catch {
     return null;
   }
-  if (!meta || meta.freshness.stale.length === 0) return null;
+  if (!meta) return null;
+  const fr = meta.freshness;
+  const box = "mb-5 rounded-xl border border-warn/40 bg-warn/10 px-4 py-3 text-sm text-ink";
+  if (fr.ungraded_games) {
+    const n = fr.ungraded_games;
+    return (
+      <div role="status" className={box}>
+        <strong className="font-semibold">The scheduled update is overdue.</strong>{" "}
+        {n} finished {n === 1 ? "game" : "games"}
+        {fr.ungraded_since ? ` since ${dayLabel(fr.ungraded_since)}` : ""} {n === 1 ? "has" : "have"} not been added to the track record.
+        Standings, team ratings and season odds were last updated {fr.last_update ? stampET(fr.last_update + "Z") : "at an unknown time"}.
+        Final scores still come straight from the NHL, and the marks on those games are provisional.
+      </div>
+    );
+  }
+  if (fr.stale.length === 0) return null;
   return (
-    <div role="status" className="mb-5 rounded-xl border border-warn/40 bg-warn/10 px-4 py-3 text-sm text-ink">
+    <div role="status" className={box}>
       <strong className="font-semibold">Some data is out of date.</strong>{" "}
       {meta.freshness.stale.map((s) => s.replace(/_/g, " ")).join(", ")} did not refresh on schedule. Results are current through{" "}
       {meta.freshness.results_through}; advanced stats through {meta.freshness.xg_through}. Forecasts below were made with the data

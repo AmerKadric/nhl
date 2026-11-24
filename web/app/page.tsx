@@ -2,7 +2,6 @@ import Link from "next/link";
 import { connection } from "next/server";
 import { Suspense } from "react";
 
-import { StaleBanner } from "@/components/Chrome";
 import { GamesBoard } from "@/components/GamesBoard";
 import { Recap } from "@/components/Recap";
 import { PageSkeleton, Unavailable } from "@/components/ui";
@@ -93,7 +92,8 @@ async function Slate({ searchParams }: { searchParams: PageProps<"/">["searchPar
   else if (view === "all") games = games.filter((g) => !g.result || g.forecast);
   const hidden = view === "completed" ? data?.games.filter((g) => g.result && !g.forecast).length ?? 0 : total - games.length;
 
-  // The most recent slate that has settled forecasts, for the recap.
+  // The most recent slate with graded forecasts, for the recap. A grade is
+  // provisional until the pipeline settles the game.
   let recap: { date: string; games: GamesResponse["games"] } | null = null;
   if (view === "today") {
     const past = await apiCached<GamesResponse>(`/v1/games?start=${addDays(today, -5)}&end=${addDays(today, -1)}`);
@@ -115,7 +115,6 @@ async function Slate({ searchParams }: { searchParams: PageProps<"/">["searchPar
 
   return (
     <div className="mt-6">
-      <StaleBanner />
       <div className="mb-5 flex flex-wrap items-center gap-3">
         <nav aria-label="Game filters" className="flex flex-wrap gap-1 rounded-xl border border-line bg-surface p-1">
           {VIEWS.map((v) => (

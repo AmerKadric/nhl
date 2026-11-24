@@ -4,7 +4,6 @@ import { notFound } from "next/navigation";
 import { Suspense } from "react";
 
 import { CompareBars, type CompareRow, DriverBars, OutcomeBar } from "@/components/charts";
-import { StaleBanner } from "@/components/Chrome";
 import { DistBars, ScoreMatrix } from "@/components/interactive";
 import { Lab } from "@/components/Lab";
 import { GameStakes } from "@/components/Stakes";
@@ -39,7 +38,6 @@ async function Matchup({ params }: { params: PageProps<"/game/[id]">["params"] }
       <nav aria-label="Breadcrumb" className="mb-4 text-xs text-mute">
         <Link href="/" className="hover:text-ice">Games</Link> <span aria-hidden>/</span> <span className="text-ink-2">{away.abbrev} at {home.abbrev}</span>
       </nav>
-      <StaleBanner />
 
       {/* A — predicted score */}
       <header className="panel rink relative overflow-hidden px-4 py-7 sm:px-8">
@@ -117,7 +115,10 @@ async function Matchup({ params }: { params: PageProps<"/game/[id]">["params"] }
           <span>How the published forecast did:</span>
           <Chip tone={g.evaluation.winner_correct ? "good" : "bad"}>{g.evaluation.winner_correct ? "✓ Picked the winner" : "✕ Missed the winner"}</Chip>
           <Chip tone={g.evaluation.exact_score_hit ? "good" : "neutral"}>{g.evaluation.exact_score_hit ? "✓ Exact score" : "Exact score missed"}</Chip>
-          <span className="num text-xs">the actual score was given a {pct(g.evaluation.p_actual_score, 1)} chance</span>
+          {g.evaluation.p_actual_score != null && (
+            <span className="num text-xs">the actual score was given a {pct(g.evaluation.p_actual_score, 1)} chance</span>
+          )}
+          {g.evaluation.provisional && <span className="text-xs text-mute">Provisional: not yet in the track record.</span>}
         </div>
       )}
 

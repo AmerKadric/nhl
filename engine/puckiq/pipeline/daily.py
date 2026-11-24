@@ -42,6 +42,9 @@ def current_season(today: dt.date | None = None) -> int:
     return today.year if today.month >= 9 else today.year - 1
 
 
+UNGRADED_AFTER_HOURS = 12
+
+
 def freshness() -> dict:
     """Age of each data feed and how far the data actually reaches."""
     now = db.utcnow()
@@ -62,6 +65,19 @@ def freshness() -> dict:
             db.games.outerjoin(db.team_game_stats, sa.and_(db.team_game_stats.c.game_id == db.games.c.id, db.team_game_stats.c.is_home == sa.true())))
             .where(db.games.c.home_score.isnot(None), db.games.c.season == current_season(), db.team_game_stats.c.game_id.is_(None))).scalar()
         out["finals_missing_xg"] = int(missing or 0)
+        # Forecast games that should have been graded by now and have not been:
+        # the direct sign that the pipeline has stopped running. Twelve hours
+        # after puck drop is past the morning run even for the latest games.
+        G, F, E = db.games, db.forecasts, db.evaluations
+        n, since = c.execute(
+            sa.select(sa.func.count(), sa.func.min(G.c.game_date))
+            .select_from(G.join(F, sa.and_(F.c.game_id == G.c.id, F.c.is_latest == sa.true())).outerjoin(E, E.c.forecast_id == F.c.id))
+            .where(E.c.forecast_id.is_(None), G.c.schedule_state == "OK",
+                   G.c.start_time_utc < now - dt.timedelta(hours=UNGRADED_AFTER_HOURS))).one()
+        out["ungraded_games"] = int(n or 0)
+        out["ungraded_since"] = str(since) if n else None
+        last = c.execute(sa.select(sa.func.max(db.ingestion_runs.c.finished_at)).where(db.ingestion_runs.c.status == "ok")).scalar()
+        out["last_update"] = last.isoformat(timespec="seconds") if last else None
     return out
 
 

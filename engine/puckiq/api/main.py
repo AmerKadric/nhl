@@ -6,6 +6,7 @@ import logging
 import os
 import time
 from collections import defaultdict, deque
+from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
 import numpy as np
@@ -19,6 +20,7 @@ from ..ingest import nhl
 from ..ingest.http import FetchError
 from ..models.forecaster import LAB_DOMAIN, confidence_label
 from ..pipeline import publish as pub
+from ..pipeline.settle import evaluate
 from . import queries as q
 
 log = logging.getLogger("puckiq.api")
@@ -73,7 +75,13 @@ def _parse_date(s: str | None, default: dt.date) -> dt.date:
         raise HTTPException(422, "Dates must be YYYY-MM-DD.")
 
 
-def _live(date: dt.date) -> dict[int, dict]:
+# How far back a game with no stored result is still looked up on the NHL
+# scoreboard. Normally the pipeline stores a final within the hour; this covers
+# the days it does not run.
+LIVE_LOOKBACK_DAYS = 7
+
+
+def _live(date: dt.date, ttl: float = 20) -> dict[int, dict]:
     """Live scoreboard, cached briefly. A fetch failure returns nothing
     rather than stale or invented state."""
     def load():
@@ -82,15 +90,40 @@ def _live(date: dt.date) -> dict[int, dict]:
         except FetchError as e:
             log.warning("scoreboard unavailable: %s", e)
             return None
-    return q.cached(f"live:{date}", 20, load) or {}
+    return q.cached(f"live:{date}", ttl, load) or {}
+
+
+def provisional_evaluation(card: dict, matrix: list[list[float]] | None = None) -> dict | None:
+    """Grade a card's forecast against a final score that has come from the
+    NHL scoreboard but has not been settled by the pipeline yet.
+
+    Uses the settlement rule itself (`settle.evaluate`) and applies the same
+    conditions the pipeline applies before storing a final, so the grade shown
+    is the one settlement will record. It is marked provisional and is not
+    part of the stored track record. The chance given to the actual score
+    needs the score matrix, which only the game endpoint loads."""
+    f, r = card.get("forecast"), card.get("result")
+    if not f or not r or r["last_period_type"] not in ("REG", "OT", "SO") or r["home_score"] == r["away_score"]:
+        return None
+    # Only a forecast published before puck drop is ever graded.
+    if not (f.get("published_at") and card.get("start_time_utc") and f["published_at"] < card["start_time_utc"]):
+        return None
+    e = evaluate(SimpleNamespace(game_id=card["id"], **{k: f[k] for k in (
+        "id", "p_home_win", "p_away_win", "exp_home_goals", "exp_away_goals", "ml_home_goals", "ml_away_goals")}),
+        matrix or [], int(r["home_score"]), int(r["away_score"]), r["last_period_type"])
+    return {"winner_correct": bool(e["winner_correct"]), "exact_score_hit": bool(e["exact_score_hit"]),
+            "p_actual_score": e["p_actual_score"] if matrix else None, "log_loss": e["log_loss"], "provisional": True}
 
 
 def _merge_live(cards: list[dict]) -> list[dict]:
     t = today_et()
-    dates = {c["date"] for c in cards if abs((dt.date.fromisoformat(c["date"]) - t).days) <= 1 and c["result"] is None}
+    dates = {c["date"] for c in cards if c["result"] is None
+             and -LIVE_LOOKBACK_DAYS <= (dt.date.fromisoformat(c["date"]) - t).days <= 1}
     live: dict[int, dict] = {}
-    for d in dates:
-        live.update(_live(dt.date.fromisoformat(d)))
+    for d in sorted(dates):
+        day = dt.date.fromisoformat(d)
+        # A slate more than a day old is over: its scoreboard no longer changes.
+        live.update(_live(day, 20 if abs((day - t).days) <= 1 else 600))
     for c in cards:
         g = live.get(c["id"])
         if not g:
@@ -101,6 +134,8 @@ def _merge_live(cards: list[dict]) -> list[dict]:
             c["live"] = {k: g[k] for k in ("home_score", "away_score", "home_sog", "away_sog", "period", "period_type", "clock", "in_intermission")}
         elif g["state"] in ("FINAL", "OFF") and g["home_score"] is not None and c["result"] is None:
             c["result"] = {"home_score": g["home_score"], "away_score": g["away_score"], "last_period_type": g["last_period_type"]}
+            if c["evaluation"] is None:
+                c["evaluation"] = provisional_evaluation(c)
     return cards
 
 
@@ -111,8 +146,8 @@ def health():
         m = q.meta()
     except Exception as e:  # noqa: BLE001
         return JSONResponse({"status": "down", "error": type(e).__name__}, status_code=503)
-    stale = m["freshness"]["stale"]
-    return {"status": "degraded" if stale or not m["model"] else "ok", "stale_sources": stale,
+    stale, overdue = m["freshness"]["stale"], m["freshness"]["ungraded_games"]
+    return {"status": "degraded" if stale or overdue or not m["model"] else "ok", "stale_sources": stale, "ungraded_games": overdue,
             "model": m["model"] and m["model"]["version"], "results_through": m["freshness"]["results_through"]}
 
 
@@ -163,6 +198,9 @@ def game(game_id: int):
     if detail:
         out.update(forecast=detail["forecast"], versions=detail["versions"], evaluation=detail["evaluation"])
         out["forecast"]["headline"] = (card["forecast"] or {}).get("headline")
+        if card["evaluation"] and card["evaluation"]["provisional"]:
+            # the score matrix is loaded here, so the chance given to the actual score can be filled in
+            card["evaluation"] = provisional_evaluation(card, detail["forecast"]["matrix"]["final"])
         gm = {}
         for side in ("home", "away"):
             gm[side] = [{**go, **gs.get(go["pid"], {})} for go in detail["forecast"]["goalies"][side]]

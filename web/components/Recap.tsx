@@ -12,6 +12,7 @@ export function Recap({ date, games }: { date: string; games: Game[] }) {
   if (scored.length === 0) return null;
   const right = scored.filter((g) => g.evaluation!.winner_correct).length;
   const exact = scored.filter((g) => g.evaluation!.exact_score_hit).length;
+  const provisional = scored.some((g) => g.evaluation!.provisional);
   return (
     <section className="mt-10" aria-labelledby="recap-h">
       <div className="mb-3 flex flex-wrap items-end justify-between gap-x-6 gap-y-1">
@@ -67,7 +68,10 @@ export function Recap({ date, games }: { date: string; games: Game[] }) {
           </tbody>
         </table>
       </div>
-      <p className="mt-2 text-xs text-mute">Scores are away–home. Forecasts shown are the last version published before each game.</p>
+      <p className="mt-2 text-xs text-mute">
+        Scores are away–home. Forecasts shown are the last version published before each game.
+        {provisional && " Marked from the NHL's final scores; these games join the track record at the next data update."}
+      </p>
     </section>
   );
 }

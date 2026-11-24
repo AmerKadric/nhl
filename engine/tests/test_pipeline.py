@@ -192,6 +192,97 @@ def test_api_endpoints(published):
     assert c.post(f"/v1/games/{gid}/lab", json={"home_g7": 99}).status_code == 422
 
 
+def test_unsettled_final_is_graded_provisionally_and_flagged_overdue(published, monkeypatch):
+    """When the pipeline has not run, a final from the NHL scoreboard is still
+    shown and graded, the grade is marked provisional and kept out of the
+    record, the site is told the update is overdue, and settlement later
+    records exactly the grade that was shown."""
+    import warnings
+    warnings.simplefilter("ignore")
+    from fastapi.testclient import TestClient
+
+    from puckiq.api import main as api
+    from puckiq.api import queries
+    from puckiq.pipeline import daily
+
+    gid, day = published["upcoming"][0], published["last_day"]
+    real = published["frames"].games.set_index("id").loc[gid]
+    h, a, lpt = int(real.home_score), int(real.away_score), real.last_period_type
+    with db.begin() as c:   # put the game back to "pipeline never saw it finish"
+        n_versions = c.execute(sa.select(sa.func.count()).select_from(db.forecasts).where(db.forecasts.c.game_id == gid)).scalar()
+        c.execute(db.evaluations.delete().where(db.evaluations.c.game_id == gid))
+        c.execute(db.games.update().where(db.games.c.id == gid).values(
+            state="FUT", home_score=None, away_score=None, last_period_type=None, home_reg_goals=None, away_reg_goals=None))
+
+    asked = []
+
+    def scoreboard(d):
+        asked.append(d)
+        return [dict(id=gid, state="OFF", schedule_state="OK", home_score=h, away_score=a, home_sog=30, away_sog=28, period=3,
+                     period_type=lpt, clock="00:00", in_intermission=False, last_period_type=lpt)] if d == day else []
+
+    monkeypatch.setattr(api.nhl, "fetch_scoreboard", scoreboard)
+    monkeypatch.setattr(api, "today_et", lambda: day + dt.timedelta(days=1))
+    queries.clear_cache()
+    c = TestClient(api.app)
+    try:
+        cards = {g["id"]: g for g in c.get(f"/v1/games?date={day.isoformat()}").json()["games"]}
+        card = cards[gid]
+        assert card["result"] == {"home_score": h, "away_score": a, "last_period_type": lpt}
+        ev, f = card["evaluation"], card["forecast"]
+        assert ev["provisional"] is True and ev["p_actual_score"] is None
+        assert ev["winner_correct"] == ((f["p_home_win"] >= 0.5) == (h > a))
+        assert ev["exact_score_hit"] == (f["ml_home_goals"] == h and f["ml_away_goals"] == a)
+        assert all(g["evaluation"]["provisional"] is False for i, g in cards.items() if i != gid)   # settled games are untouched
+
+        detail = c.get(f"/v1/games/{gid}").json()
+        shown = detail["game"]["evaluation"]
+        assert shown["provisional"] is True
+        assert shown["p_actual_score"] == pytest.approx(detail["forecast"]["matrix"]["final"][h][a])
+        assert detail["evaluation"] is None                       # nothing is stored yet
+        assert all(v["evaluation"] is None for v in detail["versions"])
+
+        # the provisional grade is not counted in the track record
+        assert c.get("/v1/accuracy").json()["forward"]["final"]["n"] == len(published["upcoming"]) - 1
+
+        # ...and the site is told the update is overdue
+        fresh = daily.freshness()
+        assert fresh["ungraded_games"] == 1 and fresh["ungraded_since"] == str(day)
+        assert c.get("/health").json()["status"] == "degraded"
+        assert c.get("/v1/meta").json()["freshness"]["ungraded_games"] == 1
+
+        # never graded: a forecast published after puck drop, a tie, an unknown ending
+        late = {**card, "evaluation": None, "forecast": {**f, "published_at": card["start_time_utc"]}}
+        assert api.provisional_evaluation(late) is None
+        assert api.provisional_evaluation({**card, "result": {"home_score": 2, "away_score": 2, "last_period_type": "REG"}}) is None
+        assert api.provisional_evaluation({**card, "result": {"home_score": h, "away_score": a, "last_period_type": None}}) is None
+
+        # the scoreboard is consulted for a week, then left alone
+        asked.clear(); queries.clear_cache()
+        monkeypatch.setattr(api, "today_et", lambda: day + dt.timedelta(days=api.LIVE_LOOKBACK_DAYS))
+        assert c.get(f"/v1/games?date={day.isoformat()}").json()["games"] and asked == [day]
+        asked.clear(); queries.clear_cache()
+        monkeypatch.setattr(api, "today_et", lambda: day + dt.timedelta(days=api.LIVE_LOOKBACK_DAYS + 1))
+        late_cards = {g["id"]: g for g in c.get(f"/v1/games?date={day.isoformat()}").json()["games"]}
+        assert asked == [] and late_cards[gid]["result"] is None and late_cards[gid]["evaluation"] is None
+    finally:
+        with db.begin() as conn:   # the pipeline catches up
+            conn.execute(db.games.update().where(db.games.c.id == gid).values(
+                state="OFF", home_score=h, away_score=a, last_period_type=lpt,
+                home_reg_goals=int(real.home_reg_goals), away_reg_goals=int(real.away_reg_goals)))
+        assert settle() == n_versions
+        queries.clear_cache()
+
+    assert daily.freshness()["ungraded_games"] == 0
+    monkeypatch.setattr(api, "today_et", lambda: day + dt.timedelta(days=1))
+    settled = c.get(f"/v1/games/{gid}").json()["game"]["evaluation"]
+    assert settled["provisional"] is False
+    for k in ("winner_correct", "exact_score_hit"):
+        assert settled[k] == shown[k]
+    assert settled["log_loss"] == pytest.approx(shown["log_loss"])
+    assert settled["p_actual_score"] == pytest.approx(shown["p_actual_score"])
+
+
 def test_lab_recalculates_with_the_real_model(seeded, published):
     """Uses a still-unplayed copy of a game so the lab is available."""
     import warnings

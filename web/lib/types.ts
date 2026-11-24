@@ -48,7 +48,9 @@ export type Game = {
   result: { home_score: number; away_score: number; last_period_type: string | null } | null;
   live: LiveState | null;
   forecast: ForecastCard | null;
-  evaluation: { winner_correct: boolean; exact_score_hit: boolean; p_actual_score: number; log_loss: number } | null;
+  /** `provisional` means graded on the fly from the NHL's final score; the
+   * pipeline has not yet added the game to the stored track record. */
+  evaluation: { winner_correct: boolean; exact_score_hit: boolean; p_actual_score: number | null; log_loss: number; provisional?: boolean } | null;
 };
 
 export type GamesResponse = { start: string; end: string; today: string; games: Game[] };
@@ -214,6 +216,11 @@ export type Freshness = {
   results_through: string;
   xg_through: string;
   finals_missing_xg: number;
+  /** Forecast games more than twelve hours old that the pipeline has not graded. */
+  ungraded_games?: number;
+  ungraded_since?: string | null;
+  /** When any pipeline step last succeeded (UTC, no zone suffix). */
+  last_update?: string | null;
 };
 
 export type Meta = {

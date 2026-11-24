@@ -1,7 +1,9 @@
 import type { Metadata, Viewport } from "next";
 import { Barlow_Condensed, IBM_Plex_Mono, Inter } from "next/font/google";
 
-import { Footer, Header } from "@/components/Chrome";
+import { Suspense } from "react";
+
+import { Footer, Header, StaleBanner } from "@/components/Chrome";
 
 import "./globals.css";
 
@@ -25,6 +27,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         </a>
         <Header />
         <main id="main" className="mx-auto w-full max-w-7xl flex-1 px-4 pb-8 pt-6 sm:px-6">
+          <Suspense fallback={null}>
+            <StaleBanner />
+          </Suspense>
           {children}
         </main>
         <Footer />
