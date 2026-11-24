@@ -11,7 +11,7 @@
   --color-ink: #e9eef4;
   --color-ink-2: #aab4c4;
   --color-mute: #7f8a9c;
-  --color-ice: #5cd0ff;        /* brand accent: UI, links, focus */
+  --color-ice: #00e4fb;        /* brand accent, the logo's cyan: UI, links, focus */
   --color-home: #2a9fd8;       /* chart mark: home team (validated pair) */
   --color-away: #c97f2e;       /* chart mark: away team */
   --color-good: #3fbf7f;       /* status only */
@@ -30,7 +30,7 @@ html {
 
 body {
   background:
-    radial-gradient(1200px 500px at 50% -260px, rgba(92, 208, 255, 0.07), transparent 70%),
+    radial-gradient(1200px 500px at 50% -260px, rgba(0, 228, 251, 0.07), transparent 70%),
     var(--color-bg);
   color: var(--color-ink);
   font-family: var(--font-sans);
@@ -39,7 +39,7 @@ body {
 }
 
 ::selection {
-  background: rgba(92, 208, 255, 0.28);
+  background: rgba(0, 228, 251, 0.28);
 }
 
 :focus-visible {
@@ -78,8 +78,8 @@ body {
 .rink {
   background-image:
     linear-gradient(90deg, transparent calc(50% - 0.5px), rgba(229, 96, 107, 0.16) calc(50% - 0.5px), rgba(229, 96, 107, 0.16) calc(50% + 0.5px), transparent calc(50% + 0.5px)),
-    linear-gradient(90deg, transparent calc(33% - 0.5px), rgba(92, 208, 255, 0.1) calc(33% - 0.5px), rgba(92, 208, 255, 0.1) calc(33% + 0.5px), transparent calc(33% + 0.5px)),
-    linear-gradient(90deg, transparent calc(67% - 0.5px), rgba(92, 208, 255, 0.1) calc(67% - 0.5px), rgba(92, 208, 255, 0.1) calc(67% + 0.5px), transparent calc(67% + 0.5px));
+    linear-gradient(90deg, transparent calc(33% - 0.5px), rgba(0, 228, 251, 0.1) calc(33% - 0.5px), rgba(0, 228, 251, 0.1) calc(33% + 0.5px), transparent calc(33% + 0.5px)),
+    linear-gradient(90deg, transparent calc(67% - 0.5px), rgba(0, 228, 251, 0.1) calc(67% - 0.5px), rgba(0, 228, 251, 0.1) calc(67% + 0.5px), transparent calc(67% + 0.5px));
 }
 
 .skeleton {
