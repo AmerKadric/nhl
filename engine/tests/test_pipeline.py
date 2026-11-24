@@ -345,10 +345,7 @@ def test_refresh_only_republishes_in_the_pregame_window(published):
     assert daily.publish_needed(published["now"]) is False
     with db.begin() as c:
         c.execute(db.games.update().where(db.games.c.id == gid).values(state="PRE", start_time_utc=start))
-    assert daily.publish_needed(published["now"]) is True            # projected goalies, game about to start
-    with db.begin() as c:
-        c.execute(db.forecasts.update().where(db.forecasts.c.game_id == gid, db.forecasts.c.is_latest == sa.true()).values(goalie_state="confirmed"))
-    assert daily.publish_needed(published["now"]) is False           # already forecast on confirmed goalies
+    assert daily.publish_needed(published["now"]) is True            # game about to start
     assert daily.publish_needed(start + dt.timedelta(minutes=1)) is False   # puck has dropped
 
 

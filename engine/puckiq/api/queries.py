@@ -394,7 +394,6 @@ def forward_record() -> dict:
             fin = d[d["is_latest"] == 1].copy()
             firsts = d.sort_values("version_no").groupby("game_id").head(1)
             out["first_version"] = _metrics(firsts)
-            out["by_goalie_state"] = {k: _metrics(v) for k, v in fin.groupby("goalie_state")}
             fin["month"] = pd.to_datetime(fin["game_date"]).dt.strftime("%Y-%m")
             out["by_month"] = {k: _metrics(v) for k, v in fin.groupby("month")}
             fin["conf"] = np.maximum(fin["p_home_win"], 1 - fin["p_home_win"])

@@ -146,14 +146,14 @@ skater_game_stats = Table(
     Index("ix_sgs_team", "team_id", "game_id"),
 )
 
-# Confirmed / projected starters observed before a game (forward only).
+# Projected starters recorded with each forecast (forward only).
 goalie_status = Table(
     "goalie_status", metadata,
     Column("id", Integer, primary_key=True, autoincrement=True),
     Column("game_id", Integer, ForeignKey("games.id"), nullable=False),
     Column("team_id", Integer, ForeignKey("teams.id"), nullable=False),
     Column("player_id", Integer, ForeignKey("players.id"), nullable=False),
-    Column("status", String(12), nullable=False),  # projected | confirmed
+    Column("status", String(12), nullable=False),  # projected (no source confirms starters)
     Column("probability", Float, nullable=False),
     Column("source", String(40), nullable=False),
     Column("observed_at", DateTime, nullable=False),
@@ -221,7 +221,7 @@ prediction_runs = Table(
     Column("model_version_id", Integer, ForeignKey("model_versions.id"), nullable=False),
     Column("started_at", DateTime, nullable=False),
     Column("finished_at", DateTime),
-    Column("trigger", String(40), nullable=False),  # scheduled | goalie_confirmed | manual
+    Column("trigger", String(40), nullable=False),  # scheduled | refresh | manual
     Column("n_games", Integer, default=0),
     Column("n_published", Integer, default=0),
     Column("status", String(20), nullable=False),
@@ -252,8 +252,8 @@ forecasts = Table(
     Column("information_cutoff", DateTime, nullable=False),
     Column("is_latest", Boolean, nullable=False, default=True),
     Column("published_pregame", Boolean, nullable=False),
-    Column("goalie_state", String(12), nullable=False),  # projected | partial | confirmed
-    Column("reason", String(40), nullable=False),  # initial | goalie_confirmed | inputs_changed
+    Column("goalie_state", String(12), nullable=False),  # always "projected"; see publish.GOALIE_STATE
+    Column("reason", String(40), nullable=False),  # initial | model_updated | inputs_changed
     Column("input_hash", String(64), nullable=False),
     Column("p_home_win", Float, nullable=False),
     Column("p_away_win", Float, nullable=False),

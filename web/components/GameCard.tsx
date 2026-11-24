@@ -9,11 +9,7 @@ import { Chip, TeamLogo } from "./ui";
 const LIVE = new Set(["LIVE", "CRIT"]);
 
 function goalieChip(g: Game) {
-  const s = g.forecast?.goalie_state;
-  if (!s) return null;
-  if (s === "confirmed") return <Chip tone="good">Goalies confirmed</Chip>;
-  if (s === "partial") return <Chip tone="warn">One goalie confirmed</Chip>;
-  return <Chip>Goalies projected</Chip>;
+  return g.forecast ? <Chip>Goalies projected</Chip> : null;
 }
 
 function statusChip(g: Game) {

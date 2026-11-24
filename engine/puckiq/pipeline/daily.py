@@ -2,8 +2,8 @@
 
 `run_daily`   full refresh: results, advanced stats, features, (re)training,
               forecast publishing, settlement.
-`run_refresh` light, frequent: schedule/state sync, goalie confirmations,
-              forecast updates, settlement.
+`run_refresh` light, frequent: schedule/state sync, pre-game odds, a last
+              forecast check before puck drop, settlement.
 
 Every step is idempotent, so a failed or repeated run is safe to retry. A
 failure in a critical feed aborts publishing; a stale non-critical feed is
@@ -248,15 +248,15 @@ def run_playoff_sim(feat, fb: FeatureBuilder, season: int, fc, n_sims: int = SEA
 
 
 def publish_needed(now: dt.datetime | None = None) -> bool:
-    """True when a game is in its pre-game window without a forecast based
-    on confirmed goalies: the only thing a refresh can change."""
+    """True when a game is in its pre-game window (the last half hour before
+    puck drop). That is the one point at which a refresh re-forecasts: it
+    picks up goalie roster moves made since the morning run and covers a game
+    that has no forecast yet. Starters themselves are never confirmed."""
     now = now or db.utcnow()
     G, F = db.games, db.forecasts
     with db.begin() as c:
-        n = c.execute(sa.select(sa.func.count()).select_from(
-            G.outerjoin(F, sa.and_(F.c.game_id == G.c.id, F.c.is_latest == sa.true())))
-            .where(G.c.state == "PRE", G.c.schedule_state == "OK", G.c.start_time_utc > now,
-                   sa.or_(F.c.id.is_(None), F.c.goalie_state != "confirmed"))).scalar()
+        n = c.execute(sa.select(sa.func.count()).select_from(G)
+                      .where(G.c.state == "PRE", G.c.schedule_state == "OK", G.c.start_time_utc > now)).scalar()
     return bool(n)
 
 
@@ -380,8 +380,8 @@ def run_refresh(days_ahead: int = 2) -> dict:
         _step(report, "market_odds", market.ingest)
         fresh = freshness()
         report["freshness"] = fresh
-        # Rebuilding features and re-forecasting is only worthwhile when a
-        # game has entered its pre-game window (starters may be confirmed).
+        # Features are rebuilt and forecasts re-checked only once a game has
+        # entered its pre-game window; see publish_needed.
         if pub.active_model() is not None and publish_needed():
             built = _step(report, "features", build_all, critical=True)
             feat, fb = built

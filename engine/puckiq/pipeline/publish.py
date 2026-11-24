@@ -63,21 +63,20 @@ def active_model() -> tuple[int, Forecaster] | None:
 
 
 def goalie_options(fb: FeatureBuilder, game_id: int, names: dict[int, str], rosters: dict[str, set[int]] | None,
-                   abbrevs: tuple[str, str], confirmed: dict | None = None) -> tuple[dict, str]:
-    """Plausible starters per side with probabilities, and the goalie state
-    ("projected" | "partial" | "confirmed")."""
-    from ..features.build import goalie_rating, starter_probabilities
+                   abbrevs: tuple[str, str]) -> dict:
+    """Plausible starters per side with probabilities.
+
+    Always a projection. The NHL's public feed does not name starters before
+    puck drop: watched on a real slate (23 November 2026), the boxscore lists
+    no goalies until the game is live and flags the starter only once it is
+    over, and the dressed lineup appears between 27 and 4 minutes before the
+    scheduled start, with both dressed goalies and no indication of which
+    one plays."""
+    from ..features.build import starter_probabilities
     p = fb.p
-    out, n_conf = {}, 0
+    out = {}
     c = fb.cands[fb.cands["game_id"] == game_id] if len(fb.cands) else pd.DataFrame()
     for side, key, abbrev in (("h", "home", abbrevs[0]), ("a", "away", abbrevs[1])):
-        conf_pid = (confirmed or {}).get(key)
-        if conf_pid:
-            gs = fb.goalies.get(int(conf_pid))
-            out[key] = [dict(pid=int(conf_pid), name=names.get(int(conf_pid), "Unknown"), prob=1.0,
-                             rating=float(goalie_rating(gs, p)), xga_n=float(gs.xga) if gs else 0.0, status="confirmed")]
-            n_conf += 1
-            continue
         cs = c[c["side"] == side].copy()
         roster = (rosters or {}).get(abbrev)
         if roster and len(cs):
@@ -92,26 +91,13 @@ def goalie_options(fb: FeatureBuilder, game_id: int, names: dict[int, str], rost
         cs = cs.sort_values("prob", ascending=False)
         out[key] = [dict(pid=int(r.pid), name=names.get(int(r.pid), "Unknown"), prob=float(r.prob), rating=float(r.rating),
                          xga_n=float(r.xga_n), status="projected") for r in cs.itertuples()]
-    state = "confirmed" if n_conf == 2 else ("partial" if n_conf == 1 else "projected")
-    return out, state
-
-
-def confirmed_starters(game_id: int, state: str) -> dict:
-    """Starters the NHL has published in the boxscore. Only trusted once the
-    game is in its pre-game state and exactly one starter is flagged."""
-    if state not in ("PRE",):
-        return {}
-    try:
-        box = nhl.fetch_boxscore_goalies(game_id)
-    except FetchError as e:
-        log.warning("boxscore unavailable for %s: %s", game_id, e)
-        return {}
-    out = {}
-    for side in ("home", "away"):
-        st = [g for g in box[side] if g["starter"]]
-        if len(st) == 1:
-            out[side] = st[0]["player_id"]
     return out
+
+
+# Stored with every forecast. It has one value because there is no source for
+# confirmed starters (see goalie_options); the column stays so that history
+# reads the same if one is ever added.
+GOALIE_STATE = "projected"
 
 
 def lineup_watch(fb: FeatureBuilder, team_id: int, names: dict[int, str], limit: int = 6) -> dict:
@@ -208,8 +194,7 @@ def publish(fb: FeatureBuilder, feat: pd.DataFrame, days_ahead: int = 7, trigger
                     except FetchError as e:
                         log.warning("roster unavailable for %s: %s", a, e)
                         rosters[a] = set()
-        confirmed = confirmed_starters(g.game_id, g.state) if use_network else {}
-        goalies, gstate = goalie_options(fb, g.game_id, names, rosters, ab, confirmed)
+        goalies, gstate = goalie_options(fb, g.game_id, names, rosters, ab), GOALIE_STATE
         h = input_hash(fc.version, row, goalies, fc.glm.cols)
 
         with db.begin() as c:
@@ -225,8 +210,6 @@ def publish(fb: FeatureBuilder, feat: pd.DataFrame, days_ahead: int = 7, trigger
         ml = sim.most_likely
         if prev is None:
             reason = "initial"
-        elif gstate != prev.goalie_state and gstate != "projected":
-            reason = "goalie_confirmed"
         elif prev.model_version_id != model_id:
             reason = "model_updated"
         else:
@@ -259,8 +242,7 @@ def publish(fb: FeatureBuilder, feat: pd.DataFrame, days_ahead: int = 7, trigger
                     if go["pid"]:
                         c.execute(db.goalie_status.insert().values(
                             game_id=g.game_id, team_id=tid, player_id=go["pid"],
-                            status="confirmed" if go["status"] == "confirmed" else "projected", probability=go["prob"],
-                            source="nhl_boxscore" if go["status"] == "confirmed" else "puckiq_usage_model", observed_at=now))
+                            status="projected", probability=go["prob"], source="puckiq_usage_model", observed_at=now))
         n_pub += 1
 
     with db.begin() as c:

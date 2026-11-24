@@ -96,17 +96,11 @@ async function Body({ searchParams }: { searchParams: PageProps<"/accuracy">["se
               {fw.games_pending} more games have a published forecast awaiting a result.
             </p>
             <div className="mt-5 grid gap-4 lg:grid-cols-2">
-              {fw.by_goalie_state && (
-                <div className="panel p-5">
-                  <div className="eyebrow mb-3">By goalie information at publication</div>
-                  <MetricTable rows={Object.entries(fw.by_goalie_state).map(([k, v]) => ({ name: k === "projected" ? "Projected goalies" : k === "confirmed" ? "After both goalies confirmed" : "One goalie confirmed", m: v }))} />
-                  {fw.first_version && <p className="mt-3 text-xs text-mute">First version of each forecast: {pct(fw.first_version.accuracy, 1)} winners, log loss {m4(fw.first_version.log_loss)}.</p>}
-                </div>
-              )}
               {fw.by_month && (
                 <div className="panel p-5">
                   <div className="eyebrow mb-3">By month</div>
                   <MetricTable rows={Object.entries(fw.by_month).map(([k, v]) => ({ name: k, m: v }))} />
+                  {fw.first_version && <p className="mt-3 text-xs text-mute">First version of each forecast: {pct(fw.first_version.accuracy, 1)} winners, log loss {m4(fw.first_version.log_loss)}.</p>}
                 </div>
               )}
             </div>
@@ -221,7 +215,7 @@ async function Body({ searchParams }: { searchParams: PageProps<"/accuracy">["se
                     ["chosen_vs_elo_raw_log_loss", "Winner log loss vs Elo"],
                     ["chosen_vs_scoring_avg_score_log_loss", "Score log loss vs scoring-average baseline"],
                     ["chosen_vs_elo_goals_score_log_loss", "Score log loss vs Elo → goals"],
-                    ["projected_vs_confirmed_goalie_log_loss", "Projected vs confirmed goalies, winner log loss"],
+                    ["projected_vs_confirmed_goalie_log_loss", "Projected starters vs knowing the actual starter, winner log loss"],
                     ["chosen_vs_lean_score_log_loss", "Score log loss vs the same model without lineup inputs"],
                   ].filter(([k]) => bt.significance[k]).map(([k, label]) => (
                     <li key={k} className="flex flex-wrap items-baseline justify-between gap-x-4">
@@ -232,7 +226,7 @@ async function Body({ searchParams }: { searchParams: PageProps<"/accuracy">["se
                     </li>
                   ))}
                 </ul>
-                <p className="mt-3 text-xs text-mute">Negative means PUCKIQ is better. Knowing the confirmed starter did not measurably change accuracy.</p>
+                <p className="mt-3 text-xs text-mute">Negative means PUCKIQ is better. Knowing who actually started, which is never available before a game, did not measurably change accuracy.</p>
               </div>
               <div className="panel p-5">
                 <div className="eyebrow mb-3">What each input group contributes</div>
@@ -348,7 +342,7 @@ async function Body({ searchParams }: { searchParams: PageProps<"/accuracy">["se
               <table className="w-full min-w-[820px] text-sm">
                 <thead className="text-left text-xs uppercase tracking-wider text-mute">
                   <tr className="border-b border-line">
-                    {["Date", "Game", "Projected", "Actual", "Favourite", "Winner", "Exact", "Chance given to actual score", ...(src === "forward" ? ["Goalies"] : [])].map((h) => (
+                    {["Date", "Game", "Projected", "Actual", "Favourite", "Winner", "Exact", "Chance given to actual score", ...(src === "forward" ? ["Version"] : [])].map((h) => (
                       <th key={h} className="px-4 py-2.5 font-semibold">{h}</th>
                     ))}
                   </tr>
@@ -370,7 +364,7 @@ async function Body({ searchParams }: { searchParams: PageProps<"/accuracy">["se
                         <td className="px-4 py-2"><span className={r.winner_correct ? "text-good" : "text-bad"}>{r.winner_correct ? "✓ correct" : "✕ wrong"}</span></td>
                         <td className="px-4 py-2">{r.exact_score_hit ? <span className="text-good">✓ hit</span> : <span className="text-mute">miss</span>}</td>
                         <td className="num px-4 py-2 text-ink-2">{pct(r.p_actual_score, 1)}</td>
-                        {src === "forward" && <td className="px-4 py-2 text-xs text-ink-2">{r.goalie_state} · v{r.version_no}</td>}
+                        {src === "forward" && <td className="num px-4 py-2 text-xs text-ink-2">v{r.version_no}</td>}
                       </tr>
                     );
                   })}

@@ -177,6 +177,6 @@ PUCKIQ must stay non-commercial (no ads, affiliate links or paid tiers) unless M
 
 - **No injury reports or game-day lineups.** No free, licensed feed exists in the sources above. The model sees only who dressed in each team's last game, so a new absence is invisible until the first game missed.
 - **Exact scores are mostly chance.** The most likely score is right about one game in thirteen.
-- **Starting goalies are never confirmed.** Checked against a real slate on 23 November 2026: the NHL boxscore lists no goalies before puck drop and flags the starter only on finished games, so the code that reads confirmed starters from it cannot fire. Every forecast averages over the projected starters.
+- **Starting goalies are never confirmed.** Checked against a real slate on 23 November 2026: the NHL boxscore lists no goalies before puck drop and flags the starter only on finished games. The dressed lineup appears between 27 and 4 minutes before the scheduled start and shows both dressed goalies, not which one plays. Every forecast averages over the projected starters; the backtest found that knowing the actual starter would not measurably help.
 - **No in-game model.** Live scores are shown as observed; no live win probability is produced.
 - **The market benchmark is new.** Odds are only available on the day of a game, so the comparison started on 23 November 2026 and needs a few hundred games before it means anything. Nothing here is betting advice.

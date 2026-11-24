@@ -1,12 +1,12 @@
 export type TeamBrief = { id: number; abbrev: string; name: string; color: string; logo: string };
 
-export type GoalieOption = { pid: number; name: string; prob: number; status: "projected" | "confirmed" | "unknown" };
+export type GoalieOption = { pid: number; name: string; prob: number; status: "projected" | "unknown" };
 
 export type ForecastCard = {
   id: number;
   version_no: number;
   published_at: string;
-  goalie_state: "projected" | "partial" | "confirmed";
+  goalie_state: "projected";
   model_version: string;
   p_home_win: number;
   p_away_win: number;
@@ -281,7 +281,6 @@ export type Accuracy = {
     games_pending: number;
     final: Metrics;
     first_version?: Metrics;
-    by_goalie_state?: Record<string, Metrics>;
     by_month?: Record<string, Metrics>;
     by_confidence?: ConfBin[];
     calibration?: CalBin[];

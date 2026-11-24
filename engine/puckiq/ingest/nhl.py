@@ -1,5 +1,5 @@
 """NHL public API ingestion: teams, games/results, schedule, goalie logs,
-live scores and boxscore starters."""
+live scores and current rosters."""
 from __future__ import annotations
 
 import datetime as dt
@@ -322,19 +322,6 @@ def ingest_skater_logs(seasons: list[int], since: dt.date | None = None, window_
             log.info("skater logs %s: %d rows", season, n_season)
         run.rows = total
     return total
-
-
-def fetch_boxscore_goalies(game_id: int) -> dict:
-    """Goalies listed in the boxscore. `starter` is only meaningful once the
-    NHL has published the lineups (state PRE or later)."""
-    d = client().get_json(f"{config.NHL_WEB_BASE}/gamecenter/{game_id}/boxscore")
-    out = {"state": d.get("gameState"), "home": [], "away": []}
-    stats = d.get("playerByGameStats") or {}
-    for side, key in (("home", "homeTeam"), ("away", "awayTeam")):
-        for g in (stats.get(key) or {}).get("goalies", []):
-            out[side].append(dict(player_id=g["playerId"], name=(g.get("name") or {}).get("default"),
-                                  starter=bool(g.get("starter"))))
-    return out
 
 
 def fetch_rosters_goalies(team_abbrev: str) -> list[dict]:

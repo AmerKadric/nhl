@@ -123,8 +123,7 @@ class Forecaster:
 
         `row`: wide pre-game feature row (h_*/a_* columns).
         `goalies`: {"home": [{"pid", "name", "prob", "rating"}], "away": [...]},
-        the plausible starters and their probabilities. A confirmed starter is
-        a single entry with prob 1."""
+        the plausible starters and their probabilities."""
         playoff = bool(row.get("playoff", 0) == 1)
         gh, ga = _norm(goalies["home"]), _norm(goalies["away"])
         scenarios = []

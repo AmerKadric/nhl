@@ -129,7 +129,7 @@ async function Matchup({ params }: { params: PageProps<"/game/[id]">["params"] }
         </div>
       ) : (
         <>
-          {f.goalie_state !== "confirmed" && !observed && (
+          {!observed && (
             <div role="note" className="mt-4 rounded-xl border border-warn/40 bg-warn/10 px-4 py-3 text-sm">
               <strong className="font-semibold">Starting goalies are projected, not confirmed.</strong>{" "}
               <span className="text-ink-2">
@@ -138,7 +138,7 @@ async function Matchup({ params }: { params: PageProps<"/game/[id]">["params"] }
                   <span key={s}>
                     {i > 0 && "; "}
                     {(s === "home" ? home : away).abbrev}{" "}
-                    {f.goalies[s].map((x) => `${x.name} ${x.status === "confirmed" ? "(confirmed)" : pct(x.prob)}`).join(", ")}
+                    {f.goalies[s].map((x) => `${x.name} ${pct(x.prob)}`).join(", ")}
                   </span>
                 ))}
                 . The NHL&apos;s public feed does not name starters before puck drop, so the forecast stays an average.
@@ -282,7 +282,7 @@ async function Matchup({ params }: { params: PageProps<"/game/[id]">["params"] }
               <table className="w-full min-w-[640px] text-sm">
                 <thead className="text-left text-xs uppercase tracking-wider text-mute">
                   <tr className="border-b border-line">
-                    {["Version", "Published", "Why", "Goalies", `${home.abbrev} win`, "Projected", "Expected goals", "Result"].map((h) => (
+                    {["Version", "Published", "Why", `${home.abbrev} win`, "Projected", "Expected goals", "Result"].map((h) => (
                       <th key={h} className="px-4 py-2.5 font-semibold">{h}</th>
                     ))}
                   </tr>
@@ -292,8 +292,7 @@ async function Matchup({ params }: { params: PageProps<"/game/[id]">["params"] }
                     <tr key={v.version_no} className="border-b border-line-soft last:border-0">
                       <td className="num px-4 py-2.5 text-ink">v{v.version_no}{v.is_latest && <span className="ml-2 text-xs text-ice">latest</span>}</td>
                       <td className="num px-4 py-2.5 text-ink-2">{stampET(v.published_at)}</td>
-                      <td className="px-4 py-2.5 text-ink-2">{v.reason === "initial" ? "First forecast" : v.reason === "goalie_confirmed" ? "Goalie confirmed" : v.reason === "model_updated" ? "Model updated" : "New data"}</td>
-                      <td className="px-4 py-2.5 text-ink-2">{v.goalie_state}</td>
+                      <td className="px-4 py-2.5 text-ink-2">{v.reason === "initial" ? "First forecast" : v.reason === "model_updated" ? "Model updated" : "New data"}</td>
                       <td className="num px-4 py-2.5 text-ink">{pct(v.p_home_win, 1)}</td>
                       <td className="num px-4 py-2.5 text-ink">{away.abbrev} {v.ml_away_goals}–{v.ml_home_goals} {home.abbrev}</td>
                       <td className="num px-4 py-2.5 text-ink-2">{fx(v.exp_away_goals)} – {fx(v.exp_home_goals)}</td>
@@ -355,7 +354,7 @@ function GoaliePanel({ team, goalies, effect, opp }: { team: TeamBrief; goalies:
             <li key={x.pid}>
               <div className="flex items-center justify-between gap-3">
                 <span className="font-semibold text-ink">{x.name}</span>
-                {x.status === "confirmed" ? <Chip tone="good">Confirmed starter</Chip> : <Chip>{pct(x.prob)} to start · projected</Chip>}
+                <Chip>{pct(x.prob)} to start · projected</Chip>
               </div>
               <div className="mt-1.5 h-1.5 rounded-full bg-raised">
                 <div className="h-full rounded-full bg-ice/80" style={{ width: `${x.prob * 100}%` }} />
