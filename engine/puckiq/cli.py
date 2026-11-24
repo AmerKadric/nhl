@@ -41,7 +41,7 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("daily", help="full daily pipeline")
     p.add_argument("--retrain", action="store_true")
     p.add_argument("--strict", action="store_true", help="exit non-zero if any step failed, not only when the run aborted")
-    sub.add_parser("refresh", help="light refresh: states, goalie confirmations, forecasts, settlement")
+    sub.add_parser("refresh", help="light refresh: states, pre-game odds, forecasts, settlement")
     sub.add_parser("settle", help="settle finished forecasts")
     sub.add_parser("status", help="print data freshness")
     sub.add_parser("season-sim", help="simulate the rest of the season and store the result")

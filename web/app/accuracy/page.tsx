@@ -99,7 +99,7 @@ async function Body({ searchParams }: { searchParams: PageProps<"/accuracy">["se
               {fw.by_goalie_state && (
                 <div className="panel p-5">
                   <div className="eyebrow mb-3">By goalie information at publication</div>
-                  <MetricTable rows={Object.entries(fw.by_goalie_state).map(([k, v]) => ({ name: k === "projected" ? "Before goalie confirmation" : k === "confirmed" ? "After both goalies confirmed" : "One goalie confirmed", m: v }))} />
+                  <MetricTable rows={Object.entries(fw.by_goalie_state).map(([k, v]) => ({ name: k === "projected" ? "Projected goalies" : k === "confirmed" ? "After both goalies confirmed" : "One goalie confirmed", m: v }))} />
                   {fw.first_version && <p className="mt-3 text-xs text-mute">First version of each forecast: {pct(fw.first_version.accuracy, 1)} winners, log loss {m4(fw.first_version.log_loss)}.</p>}
                 </div>
               )}

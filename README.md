@@ -132,7 +132,7 @@ npm run dev                                              # site on http://localh
 | Command | What it does |
 |---|---|
 | `puckiq daily` | Full run: results, advanced stats, ratings, weekly retrain, publish, settle |
-| `puckiq refresh` | Light run: game states, goalie confirmations, forecast updates, settle |
+| `puckiq refresh` | Light run: game states, pre-game odds, forecast updates, settle |
 | `puckiq backtest` | Walk-forward backtest of every candidate model |
 | `puckiq season-sim` | Simulate the rest of the season and store the result (also part of `daily`) |
 | `puckiq season-backtest` | Validate the season simulation against past seasons |
@@ -177,6 +177,6 @@ PUCKIQ must stay non-commercial (no ads, affiliate links or paid tiers) unless M
 
 - **No injury reports or game-day lineups.** No free, licensed feed exists in the sources above. The model sees only who dressed in each team's last game, so a new absence is invisible until the first game missed.
 - **Exact scores are mostly chance.** The most likely score is right about one game in thirteen.
-- **Goalie confirmation is untested live.** The code that reads confirmed starters from the NHL boxscore has not yet been observed against a real pre-game window.
+- **Starting goalies are never confirmed.** Checked against a real slate on 23 November 2026: the NHL boxscore lists no goalies before puck drop and flags the starter only on finished games, so the code that reads confirmed starters from it cannot fire. Every forecast averages over the projected starters.
 - **No in-game model.** Live scores are shown as observed; no live win probability is produced.
 - **The market benchmark is new.** Odds are only available on the day of a game, so the comparison started on 23 November 2026 and needs a few hundred games before it means anything. Nothing here is betting advice.

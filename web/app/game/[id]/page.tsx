@@ -131,7 +131,7 @@ async function Matchup({ params }: { params: PageProps<"/game/[id]">["params"] }
         <>
           {f.goalie_state !== "confirmed" && !observed && (
             <div role="note" className="mt-4 rounded-xl border border-warn/40 bg-warn/10 px-4 py-3 text-sm">
-              <strong className="font-semibold">Starting goalies are not confirmed.</strong>{" "}
+              <strong className="font-semibold">Starting goalies are projected, not confirmed.</strong>{" "}
               <span className="text-ink-2">
                 This forecast averages over the likely starters:{" "}
                 {(["away", "home"] as const).map((s, i) => (
@@ -141,7 +141,7 @@ async function Matchup({ params }: { params: PageProps<"/game/[id]">["params"] }
                     {f.goalies[s].map((x) => `${x.name} ${x.status === "confirmed" ? "(confirmed)" : pct(x.prob)}`).join(", ")}
                   </span>
                 ))}
-                . It is re-published as a new version when the NHL lists the starters.
+                . The NHL&apos;s public feed does not name starters before puck drop, so the forecast stays an average.
               </span>
             </div>
           )}
