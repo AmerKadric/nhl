@@ -1,21 +1,35 @@
-/** PUCKIQ mark: a puck seen from above as a face-off circle, with a single
- * probability arc sweeping around it. Reads at 16px and at 64px. */
-export function Mark({ size = 28 }: { size?: number }) {
+/* eslint-disable @next/next/no-img-element */
+
+/** The PUCKIQ icon on its own: used where the full logo does not fit. */
+export function Mark({ size = 34, className = "" }: { size?: number; className?: string }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 32 32" aria-hidden="true">
-      <rect width="32" height="32" rx="8" fill="#10131a" />
-      <rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#222835" />
-      <circle cx="16" cy="16" r="9.5" fill="none" stroke="#2c3443" strokeWidth="2.5" />
-      <path d="M16 6.5 A9.5 9.5 0 1 1 7.77 20.75" fill="none" stroke="#5cd0ff" strokeWidth="2.5" strokeLinecap="round" />
-      <circle cx="16" cy="16" r="3.4" fill="#e9eef4" />
-    </svg>
+    <img
+      src="/brand/mark.webp"
+      alt=""
+      width={size}
+      height={size}
+      decoding="async"
+      className={`shrink-0 select-none ${className}`}
+      style={{ width: size, height: size }}
+    />
   );
 }
 
-export function Wordmark() {
+// The logo file is 589 x 160.
+const LOGO_RATIO = 589 / 160;
+
+/** The full PUCKIQ logo, icon and name together. Drawn for a dark background. */
+export function Logo({ height = 34, className = "" }: { height?: number; className?: string }) {
+  const width = Math.round(height * LOGO_RATIO);
   return (
-    <span className="display text-[1.45rem] font-bold leading-none tracking-[0.06em]">
-      PUCK<span className="text-ice">IQ</span>
-    </span>
+    <img
+      src="/brand/logo.webp"
+      alt="PUCKIQ"
+      width={width}
+      height={height}
+      decoding="async"
+      className={`shrink-0 select-none ${className}`}
+      style={{ width, height }}
+    />
   );
 }

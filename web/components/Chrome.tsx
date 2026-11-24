@@ -6,18 +6,16 @@ import { apiCached } from "@/lib/api";
 import { stampET } from "@/lib/format";
 import type { Meta } from "@/lib/types";
 
-import { Mark, Wordmark } from "./Brand";
+import { Logo, Mark } from "./Brand";
 import { NavLinks } from "./NavLinks";
 
 export function Header() {
   return (
     <header className="sticky top-0 z-40 border-b border-line bg-bg/85 backdrop-blur-md">
       <div className="mx-auto flex h-14 max-w-7xl items-center gap-2 px-4 sm:gap-4 sm:px-6">
-        <Link href="/" className="flex shrink-0 items-center gap-2.5" aria-label="PUCKIQ home">
-          <Mark />
-          <span className="hidden sm:contents">
-            <Wordmark />
-          </span>
+        <Link href="/" className="flex shrink-0 items-center" aria-label="PUCKIQ home">
+          <Mark className="sm:hidden" />
+          <Logo className="hidden sm:block" />
         </Link>
         <Suspense fallback={<span className="ml-6 h-5 w-56" />}>
           <NavLinks />
@@ -82,10 +80,7 @@ export function Footer() {
     <footer className="mt-20 border-t border-line">
       <div className="mx-auto grid max-w-7xl gap-8 px-4 py-10 text-sm text-ink-2 sm:px-6 md:grid-cols-[1.2fr_1fr_1fr]">
         <div>
-          <div className="flex items-center gap-2.5">
-            <Mark size={24} />
-            <Wordmark />
-          </div>
+          <Logo height={40} />
           <p className="mt-3 max-w-sm text-mute">
             Independent NHL score forecasts from a published statistical model. Probabilities, not promises: no model can know a
             final score in advance.
